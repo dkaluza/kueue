@@ -18,7 +18,8 @@ Make sure the following conditions are met:
 - A Kubernetes cluster is running.
 - The kubectl command-line tool has communication with your cluster.
 - [Kueue is installed](/docs/installation).
-- The cluster has at least one [local queue and cluster queue](/docs/tasks/manage/administer_cluster_quotas).
+- The cluster has at least one [local queue and cluster queue](/docs/tasks/manage/administer_cluster_quotas). Presented commands assume your local queue is named "user-queue" and cluster queue is named "cluster-queue", if this is not the case adjust them appropriately.
+
 
 {{% alert title="Note" color="primary" %}}
 The queries in this page require `AssignQueueLabelsForPods` Feature Gate, which is enabled by default.
@@ -74,9 +75,9 @@ watch -n 15  'kubectl top pod --sum -l kueue.x-k8s.io/cluster-queue-name=cluster
 ```
 
 {{% alert title="Note" color="primary" %}}
-If you encounter a "error: Metrics API not available" error it may be caused by certificate
+If you encounter an error like "error: Metrics API not available", it may be caused by certificate
 verification problems in your cluster. You can skip the verification in metrics-server by
-editing the deployment deployment `kubectl edit deployment metrics-server -n kube-system`
+editing the deployment `kubectl edit deployment metrics-server -n kube-system`
 and adding `--kubelet-insecure-tls` to the container arguments, however this
 is **highly discouraged in production environments**.
 {{% /alert %}}
@@ -84,17 +85,19 @@ is **highly discouraged in production environments**.
 
 ## Production resource monitoring
 
-1. Install prometheus and kube-state-metrics in a way that matches your setup.
+1. Install [prometheus](/docs/tasks/manage/observability/setup_prometheus) and [kube-state-metrics](https://github.com/kubernetes-sigs/kube-state-metrics) in a way that matches your setup.
 Adjust the kube-state-metrics configuration to allowlist Kueue pod labels.
 
-Assuming you are using the kube-prometheus-stack helm chart, add the following fragment to your `values.yaml`:
+Below commands assume that you are using the kube-prometheus-stack helm chart, which contains both prometheus and kube-state-metrics.
+If you are using other setup adjust them appropriately.
+Add the following fragment to your `values.yaml`:
 ```yaml
 kube-state-metrics:
   metricLabelsAllowlist:
     - pods=[kueue.x-k8s.io/cluster-queue-name, kueue.x-k8s.io/local-queue-name]
 ```
 
-Deploy Prometheus stack helm chart with values.yaml:
+Deploy prometheus stack helm chart with `values.yaml`:
 ```sh
 helm install kube-prometheus-stack oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack -f values.yaml
 ```
@@ -104,12 +107,12 @@ kubectl port-forward svc/kube-prometheus-stack-prometheus 9090:9090
 ```
 3. Deploy some jobs, for example one defined above.
 
-4. Verify that new labels are available in the PromQL queries in [UI](http://localhost:9090/):
+4. Verify that new labels are available in the PromQL queries in [UI](http://localhost:9090/) (use your own address if you did not forward the port in one of the previous steps):
 ```promql
 kube_pod_labels{label_kueue_x_k8s_io_local_queue_name!=""}
 ```
 
-5. Now you can attach queue labels to the existing pod resource usage metrics with `group_left`.
+5. Now you can attach queue labels to the existing pod resource usage metrics with [group_left](https://prometheus.io/docs/prometheus/latest/querying/operators/#many-to-one-and-one-to-many-vector-matches).
 
 Use them to aggregate the metrics, for example:
 ```
