@@ -1,9 +1,9 @@
 ---
-title: "Monitor real resource usage"
+title: "Monitor actual resource usage"
 date: 2026-02-24
 weight: 3
 description: >
-  Monitor real resource usage with aggregation or filtering by specific queue.
+  Monitor actual resource usage with aggregation or filtering by specific queue.
 ---
 
 This page shows you how to use Kueue labels assigned to pods to monitor resource
@@ -31,15 +31,16 @@ If it is not enabled, see [Installation](/docs/installation/#change-the-feature-
 {{% alert title="Warning" color="warning" %}}
 As mentioned on  [Metrics Server repository site](https://github.com/kubernetes-sigs/metrics-server?tab=readme-ov-file#kubernetes-metrics-server),
 Metrics Server and provided command line tool - `kubectl top` - is not meant as a monitoring solution. The tool is convenient
-for local debugging but it is not a replacement for real monitoring. For the setup more prepared for production see the
-[Production resource monitoring](#production-resource-monitoring) section.
+for quick troubleshooting but is not a substitute for full-scale monitoring. See the [Production resource monitoring](#production-resource-monitoring) section for a more robust setup.
 
 {{% /alert %}}
 
 1. To use `kubectl top` you need to install metrics-server for you cluster.
 Follow the [Metrics Server Installation](https://github.com/kubernetes-sigs/metrics-server?tab=readme-ov-file#installation)
-2. Schedule a couple of jobs that have some real cpu usage to your local queue:
-```yaml
+2. Schedule a couple of jobs that have some actual cpu usage to your local queue:
+```sh
+for i in {1..3}; do
+kubectl create -f - <<'EOF'
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -62,6 +63,8 @@ spec:
             cpu: "1"
 
       restartPolicy: Never
+EOF
+done
 ```
 3. Monitor the usage of cpu and memory in nearly real time for this local queue with `kubectl top`:
 ```sh
@@ -85,12 +88,9 @@ is **highly discouraged in production environments**.
 
 ## Production resource monitoring
 
-1. Install [prometheus](/docs/tasks/manage/observability/setup_prometheus) and [kube-state-metrics](https://github.com/kubernetes-sigs/kube-state-metrics) in a way that matches your setup.
-Adjust the kube-state-metrics configuration to allowlist Kueue pod labels.
+1. Install [prometheus](/docs/tasks/manage/observability/setup_prometheus) and [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) according to your cluster's setup. Next, configure your `kube-state-metrics` to allowlist Kueue pod labels.
 
-Below commands assume that you are using the kube-prometheus-stack helm chart, which contains both prometheus and kube-state-metrics.
-If you are using other setup adjust them appropriately.
-Add the following fragment to your `values.yaml`:
+The commands below assume you are using the `kube-prometheus-stack` Helm chart (which includes both tools). If you use a different setup, adjust your configuration accordingly. To proceed with the Helm chart, add the following fragment to your `values.yaml` file:
 ```yaml
 kube-state-metrics:
   metricLabelsAllowlist:
@@ -101,20 +101,18 @@ Deploy prometheus stack helm chart with `values.yaml`:
 ```sh
 helm install kube-prometheus-stack oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack -f values.yaml
 ```
-2. If you do not have the Prometheus UI available online - forward port for prometheus service:
+2. If you do not have the Prometheus UI available, forward a port for the Prometheus service:
 ```sh
 kubectl port-forward svc/kube-prometheus-stack-prometheus 9090:9090
 ```
-3. Deploy some jobs, for example one defined above.
+3. Deploy some jobs, such as the sample jobs defined earlier.
 
-4. Verify that new labels are available in the PromQL queries in [UI](http://localhost:9090/) (use your own address if you did not forward the port in one of the previous steps):
+4. Verify that the new labels are available by running a PromQL query in the [Prometheus UI](http://localhost:9090/). (If you are not using port-forwarding, use your specific cluster address instead.)
 ```promql
 kube_pod_labels{label_kueue_x_k8s_io_local_queue_name!=""}
 ```
 
-5. Now you can attach queue labels to the existing pod resource usage metrics with [group_left](https://prometheus.io/docs/prometheus/latest/querying/operators/#many-to-one-and-one-to-many-vector-matches).
-
-Use them to aggregate the metrics, for example:
+5. You can now join the queue labels with your existing pod resource metrics using [group_left](https://prometheus.io/docs/prometheus/latest/querying/operators/#many-to-one-and-one-to-many-vector-matches). For example, use this query to aggregate CPU usage by local queue:
 ```
 sum by (label_kueue_x_k8s_io_local_queue_name) (
   sum by (namespace, pod) (
@@ -125,4 +123,4 @@ sum by (label_kueue_x_k8s_io_local_queue_name) (
 )
 ```
 
-Use `label_kueue_x_k8s_io_cluster_queue_name` to filter and aggregate by cluster queue.
+To filter or aggregate by cluster queue instead, replace the local queue label with   `label_kueue_x_k8s_io_cluster_queue_name`.
