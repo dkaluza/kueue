@@ -71,7 +71,17 @@ done
 watch -n 15  'kubectl top pod --sum -l kueue.x-k8s.io/local-queue-name=user-queue'
 ```
 You will see a list of pods currently running on the local queue named "user-queue" with their current cpu and memory measurements and the sum of the usage at the bottom. The list will be automatically refreshed every 15 seconds.
+The outcome should look like this:
+```text
+Every 15.0s: kubectl top pod --sum -l kueue.x-k8s.io/local-queue-name=user-queue
 
+NAME                     CPU(cores)   MEMORY(bytes)
+sample-job-jd2vm-9hpnr   661m         3Mi
+sample-job-p8mxr-cld27   684m         2Mi
+sample-job-wccrt-h4684   654m         0Mi
+                         ________     ________
+                         1998m        6Mi
+```
 4. Similarly, you can monitor the usage of the resources by jobs admitted to a cluster queue:
 ```sh
 watch -n 15  'kubectl top pod --sum -l kueue.x-k8s.io/cluster-queue-name=cluster-queue'
