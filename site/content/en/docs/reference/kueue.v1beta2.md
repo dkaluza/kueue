@@ -3020,6 +3020,26 @@ re-queuing an evicted workload.</p>
 </tbody>
 </table>
 
+## `RelativeConstraint`     {#kueue-x-k8s-io-v1beta2-RelativeConstraint}
+    
+(Alias of `string`)
+
+**Appears in:**
+
+
+
+<p>RelativeConstraint defines how a specified numeric property (e.g., a label value) of the preemptor compares to the candidate.
+Possible values are:</p>
+<ul>
+<li>&quot;Lower&quot;: permits preemption if candidate &lt; preemptor</li>
+<li>&quot;Greater&quot;: permits preemption if candidate &gt; preemptor</li>
+<li>&quot;LowerOrEqual&quot;: permits preemption if candidate &lt;= preemptor</li>
+<li>&quot;GreaterOrEqual&quot;: permits preemption if candidate &gt;= preemptor</li>
+</ul>
+
+
+
+
 ## `RequeueState`     {#kueue-x-k8s-io-v1beta2-RequeueState}
     
 
