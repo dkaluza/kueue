@@ -937,6 +937,16 @@ const (
 	// - "PreemptionGated": the preemptor workload could not preempt the preemption targets to acquire quota due to a preemption gate.
 	WorkloadBlockedOnPreemptionGates = "BlockedOnPreemptionGates"
 
+	// WorkloadInsufficientTopology means that the Workload attempted to be admitted,
+	// quota was available, but no topology domain satisfied its requirements.
+	// It's only set if the ConfigurablePreemption feature gate is enabled.
+	WorkloadInsufficientTopology = "InsufficientTopology"
+
+	// Reasons for the WorkloadInsufficientTopology condition.
+
+	// WorkloadInsufficientTopologyReasonAdmitted indicates that the condition was reset because the workload was admitted.
+	WorkloadInsufficientTopologyReasonAdmitted = "Admitted"
+
 	// WorkloadQuotaReserved means that the Workload has reserved quota a ClusterQueue.
 	WorkloadQuotaReserved = "QuotaReserved"
 

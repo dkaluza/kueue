@@ -547,6 +547,12 @@ const (
 	// for the considered workload to get it. We don't immediately admit this workload as we have
 	// to wait for these preemptions to complete.
 	RecomputeAssignmentUponPreemptionTargetsOverlap featuregate.Feature = "RecomputeAssignmentUponPreemptionTargetsOverlap"
+
+	// owner: @Nilsachy
+	//
+	// Enables Configurable Preemption, including support for PreemptionConfig resources,
+	// custom preemption triggers, candidate filtering rules, ordering, and preemption rate limits.
+	ConfigurablePreemption featuregate.Feature = "ConfigurablePreemption"
 )
 
 func init() {
@@ -851,6 +857,10 @@ var defaultVersionedFeatureGates = map[featuregate.Feature]featuregate.Versioned
 
 	RecomputeAssignmentUponPreemptionTargetsOverlap: {
 		{Version: version.MustParse("0.20"), Default: true, PreRelease: featuregate.Beta},
+	},
+
+	ConfigurablePreemption: {
+		{Version: version.MustParse("0.20"), Default: false, PreRelease: featuregate.Alpha},
 	},
 }
 

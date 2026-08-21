@@ -1141,6 +1141,23 @@ func BlockedOnPreemptionGatesCondition(w *kueue.Workload) *metav1.Condition {
 	return nil
 }
 
+func SetInsufficientTopologyCondition(w *kueue.Workload, now time.Time, reason string, message string) bool {
+	condition := metav1.Condition{
+		Type:               kueue.WorkloadInsufficientTopology,
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: metav1.NewTime(now),
+		Reason:             reason,
+		Message:            api.TruncateConditionMessage(message),
+		ObservedGeneration: w.Generation,
+	}
+	return apimeta.SetStatusCondition(&w.Status.Conditions, condition)
+}
+
+// ResetInsufficientTopologyCondition resets the InsufficientTopology condition to false if it was true.
+func ResetInsufficientTopologyCondition(w *kueue.Workload, reason string, clock clock.Clock) bool {
+	return resetActiveCondition(&w.Status.Conditions, w.Generation, kueue.WorkloadInsufficientTopology, reason, clock)
+}
+
 // PropagateResourceRequests synchronizes w.Status.ResourceRequests to
 // with info.TotalRequests if the feature gate is enabled and returns true if w was updated
 func PropagateResourceRequests(w *kueue.Workload, info *Info, formatter *resources.ResourceFormatter) bool {

@@ -37,6 +37,7 @@ var (
 	admissionManagedConditions = []string{
 		kueue.WorkloadQuotaReserved,
 		kueue.WorkloadBlockedOnPreemptionGates,
+		kueue.WorkloadInsufficientTopology,
 		kueue.WorkloadEvicted,
 		kueue.WorkloadAdmitted,
 		kueue.WorkloadPreempted,
