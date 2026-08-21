@@ -16,6 +16,10 @@ limitations under the License.
 
 package v1beta2
 
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
 // RelativeConstraint defines how a specified numeric property (e.g., a label value) of the preemptor compares to the candidate.
 // Possible values are:
 // - "Lower": permits preemption if candidate < preemptor
@@ -66,3 +70,114 @@ type NumericLabelConstraint struct {
 	// +optional
 	MaxValue *int32 `json:"maxValue,omitempty"`
 }
+
+type PreemptionConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              PreemptionConfigSpec `json:"spec,omitempty"`
+}
+
+type PreemptionConfigSpec struct {
+	// Rules to select preemption candidates.
+	Rules []PreemptionRule
+	// Ordering of the preemption candidates.
+	// The order will be always deterministic, as UID
+	// of the workloads is used to break the ties
+	// If not set workloads will be just ordered by UID.
+	Ordering []OrderingField
+}
+
+type PreemptionRuleTrigger string
+
+const (
+	InsufficientQuota    PreemptionRuleTrigger = "InsufficientQuota"
+	QuotaReclaimRequired PreemptionRuleTrigger = "QuotaReclaimRequired"
+	InsufficientTopology PreemptionRuleTrigger = "InsufficientTopology"
+)
+
+type PreemptionRule struct {
+	Name string
+
+	// Label Selector indicating which workloads can trigger preemptions
+	// using this rule.
+	MatchingPreemptorWorkloads metav1.LabelSelector
+
+	Trigger PreemptionRuleTrigger
+	// How long the trigger has to occur to start preempting workloads specified by candidates. 0 indicates that preemptions can be started immediately.
+	minTriggerRequiredDurationSeconds int
+
+	// Selection rules for workloads that are candidates for preemption.
+	// Candidates resulting from multiple selectors are summed into one set. No selectors result in empty candidate set, thereby disallowing any preemptions with this rule.
+	Candidates []PreemptionCandidateSelector
+}
+
+type PreemptionRelationConstraint string
+
+const (
+	SameLocalQueue   PreemptionRelationConstraint = "SameLocalQueue"
+	SameClusterQueue PreemptionRelationConstraint = "SameClusterQueue"
+	SameCohort       PreemptionRelationConstraint = "SameCohort"
+	SameCohortTree   PreemptionRelationConstraint = "SameCohortTree"
+	AnyClusterQueue  PreemptionRelationConstraint = "AnyClusterQueue"
+)
+
+type QuotaConstraint string
+
+const (
+	BorrowingCapacityFromPreemptor QuotaConstraint = "BorrowingCapacityFromPreemptor"
+	DRSLessThanOrEqualToFinalShare QuotaConstraint = "DRSLessThanOrEqualToFinalShare"
+	DRSLessThanInitialShare        QuotaConstraint = "DRSLessThanInitialShare"
+	DRSAllStrategies               QuotaConstraint = "DRSAllStrategies"
+)
+
+type PreemptionCandidateSelector struct {
+	// Required.
+	RelationRequirement PreemptionRelationConstraint
+
+	// Accepts all if not set.
+	// Cannot be set if RelationRequirement is SameLocalQueue or SameClusterQueue.
+	Quota QuotaConstraint
+
+	// Accepts all if not set.
+	ClusterQueueSelector metav1.LabelSelector
+
+	// Accepts all if not set
+	WorkloadSelector metav1.LabelSelector
+
+	// Accepts all if not set
+	HostNodeSelector metav1.LabelSelector
+
+	// Matches all workload priority classes if not set.
+	PreemptingWorkloadPrioritySelector metav1.LabelSelector
+
+	// Matches all workload priority classes if not set.
+	CandidateWorkloadPrioritySelector metav1.LabelSelector
+
+	// The comparison is made against the preempting workload.
+	// Lower means that the candidate
+	// has lower priority than the preemptor and so on. No check is made
+	// if the field is nil.
+	RelativeWorkloadPrioirty *RelativeConstraint
+
+	// Accepts any execution times if not set
+	MinExecutionTimeSeconds *int64
+	MaxExecutionTimeSeconds *int64
+	ExecutionTimeRelation   *RelativeConstraint
+
+	// Accepts any time from creation if not set
+	MinTimeFromCreationSeconds *int64
+	MaxTimeFromCreationSeconds *int64
+	TimeFromCreationRelation   *RelativeConstraint
+}
+
+type OrderingField string
+
+const (
+	Priority                         OrderingField = "Priority"
+	AdmissionTimestamp               OrderingField = "AdmissionTimestamp"
+	ClusterQueueDRS                  OrderingField = "ClusterQueueDRS"
+	IsOtherCQ                        OrderingField = "IsOtherCQ"
+	IsOtherCohort                    OrderingField = "IsOtherCohort"
+	IsDRSLessThanInitialShare        OrderingField = "IsDRSLessThanInitialShare"
+	IsDRSLessThanOrEqualToFinalShare OrderingField = "IsDRSLessThanOrEqualToFinalShare"
+)
