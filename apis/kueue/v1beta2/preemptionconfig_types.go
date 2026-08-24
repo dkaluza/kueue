@@ -173,11 +173,8 @@ type PreemptionCandidateSelector struct {
 type OrderingField string
 
 const (
-	Priority                         OrderingField = "Priority"
-	AdmissionTimestamp               OrderingField = "AdmissionTimestamp"
-	ClusterQueueDRS                  OrderingField = "ClusterQueueDRS"
-	IsOtherCQ                        OrderingField = "IsOtherCQ"
-	IsOtherCohort                    OrderingField = "IsOtherCohort"
-	IsDRSLessThanInitialShare        OrderingField = "IsDRSLessThanInitialShare"
-	IsDRSLessThanOrEqualToFinalShare OrderingField = "IsDRSLessThanOrEqualToFinalShare"
+	Priority           OrderingField = "Priority"
+	AdmissionTimestamp OrderingField = "AdmissionTimestamp"
+	IsOtherCQ          OrderingField = "IsOtherCQ"
+	IsOtherCohort      OrderingField = "IsOtherCohort"
 )

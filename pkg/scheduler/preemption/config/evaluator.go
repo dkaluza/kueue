@@ -28,24 +28,24 @@ type preemptionEvaluator struct {
 	candidates []*workload.Info
 }
 
-func newPreemptionEvaluator(candidates []*workload.Info) *preemptionEvaluator {
+func NewPreemptionEvaluator(candidates []*workload.Info) *preemptionEvaluator {
 	return &preemptionEvaluator{
 		candidates: candidates,
 	}
 }
 
-func findCandidates(config v1beta2.PreemptionConfig, preemptorCq *schdcache.ClusterQueueSnapshot) []*workload.Info {
+func findCandidates(config v1beta2.PreemptionConfig, preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot) []*workload.Info {
+	activeRules := []v1beta2.PreemptionRule{}
+	for _, rule := range config.Spec.Rules {
+		if isActiveTrigger(rule, preemptor) {
+			activeRules = append(activeRules, rule)
+		}
+	}
+
 	candidates := []*workload.Info{}
 	for _, targetCq := range preemptorCq.Parent().Root().SubtreeClusterQueues() {
-		activeRules := []v1beta2.PreemptionRule{}
-		for _, rule := range config.Spec.Rules {
-			if isActiveTrigger(rule, preemptorCq, targetCq) {
-				activeRules = append(activeRules, rule)
-			}
-		}
-
 		for _, wlInfo := range targetCq.Workloads {
-			if isActiveCandidate(activeRules, preemptorCq, targetCq, wlInfo) {
+			if isActiveCandidate(activeRules, preemptorCq, preemptor, targetCq, wlInfo) {
 				candidates = append(candidates, wlInfo)
 			}
 		}
@@ -53,12 +53,12 @@ func findCandidates(config v1beta2.PreemptionConfig, preemptorCq *schdcache.Clus
 	return candidates
 }
 
-func isActiveTrigger(_ v1beta2.PreemptionRule, _ *schdcache.ClusterQueueSnapshot, _ *schdcache.ClusterQueueSnapshot) bool {
+func isActiveTrigger(rule v1beta2.PreemptionRule, _ *workload.Info) bool {
 	// Will be implemented later
 	return true
 }
 
-func isActiveCandidate(_ []v1beta2.PreemptionRule, _ *schdcache.ClusterQueueSnapshot, _ *schdcache.ClusterQueueSnapshot, _ *workload.Info) bool {
+func isActiveCandidate(_ []v1beta2.PreemptionRule, _ *schdcache.ClusterQueueSnapshot, _ *workload.Info, _ *schdcache.ClusterQueueSnapshot, _ *workload.Info) bool {
 	// Will be implemented later
 	return true
 }
