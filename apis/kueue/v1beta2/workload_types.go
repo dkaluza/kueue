@@ -947,33 +947,6 @@ const (
 	// WorkloadInsufficientTopologyReasonAdmitted indicates that the condition was reset because the workload was admitted.
 	WorkloadInsufficientTopologyReasonAdmitted = "Admitted"
 
-	// WorkloadInsufficientQuota means that the Workload attempted to be admitted,
-	// but there was not enough unused quota in the ClusterQueue to accommodate the Workload.
-	// It's only set if the ConfigurablePreemption feature gate is enabled.
-	WorkloadInsufficientQuota = "InsufficientQuota"
-
-	// Reasons for the WorkloadInsufficientQuota condition.
-
-	// WorkloadInsufficientQuotaReasonAdmitted indicates that the condition was reset because the workload was admitted.
-	WorkloadInsufficientQuotaReasonAdmitted = "Admitted"
-
-	// WorkloadInsufficientQuotaReasonQuotaFreed indicates that the condition was reset because quota was freed.
-	WorkloadInsufficientQuotaReasonQuotaFreed = "QuotaFreed"
-
-	// WorkloadQuotaReclaimRequired means that the Workload attempted to be admitted,
-	// nominal total quota of the ClusterQueue is high enough, but quota needs to be reclaimed
-	// from other workloads before this workload can be scheduled.
-	// It's only set if the ConfigurablePreemption feature gate is enabled.
-	WorkloadQuotaReclaimRequired = "QuotaReclaimRequired"
-
-	// Reasons for the WorkloadQuotaReclaimRequired condition.
-
-	// WorkloadQuotaReclaimRequiredReasonAdmitted indicates that the condition was reset because the workload was admitted.
-	WorkloadQuotaReclaimRequiredReasonAdmitted = "Admitted"
-
-	// WorkloadQuotaReclaimRequiredReasonQuotaFreed indicates that the condition was reset because quota was freed.
-	WorkloadQuotaReclaimRequiredReasonQuotaFreed = "QuotaFreed"
-
 	// WorkloadQuotaReserved means that the Workload has reserved quota a ClusterQueue.
 	WorkloadQuotaReserved = "QuotaReserved"
 
