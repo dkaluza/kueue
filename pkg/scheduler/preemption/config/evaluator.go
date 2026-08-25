@@ -88,7 +88,8 @@ func isActiveTrigger(clock clock.Clock, rule v1beta2.PreemptionRule, wlInfo *wor
 	return false, nil
 }
 
-func isAnyTriggerActive(clock clock.Clock, rules []v1beta2.PreemptionRule, wlInfo *workload.Info) (bool, error) {
+// TODO: make into a method later
+func IsAnyTriggerActive(clock clock.Clock, rules []v1beta2.PreemptionRule, wlInfo *workload.Info) (bool, error) {
 	for _, rule := range rules {
 		isActive, err := isActiveTrigger(clock, rule, wlInfo)
 		if err != nil {
