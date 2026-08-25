@@ -104,7 +104,7 @@ type PreemptionRule struct {
 
 	Trigger PreemptionRuleTrigger
 	// How long the trigger has to occur to start preempting workloads specified by candidates. 0 indicates that preemptions can be started immediately.
-	minTriggerRequiredDurationSeconds int
+	MinTriggerRequiredDurationSeconds int
 
 	// Selection rules for workloads that are candidates for preemption.
 	// Candidates resulting from multiple selectors are summed into one set. No selectors result in empty candidate set, thereby disallowing any preemptions with this rule.
@@ -121,53 +121,21 @@ const (
 	AnyClusterQueue  PreemptionRelationConstraint = "AnyClusterQueue"
 )
 
-type QuotaConstraint string
-
-const (
-	BorrowingCapacityFromPreemptor QuotaConstraint = "BorrowingCapacityFromPreemptor"
-	DRSLessThanOrEqualToFinalShare QuotaConstraint = "DRSLessThanOrEqualToFinalShare"
-	DRSLessThanInitialShare        QuotaConstraint = "DRSLessThanInitialShare"
-	DRSAllStrategies               QuotaConstraint = "DRSAllStrategies"
-)
-
 type PreemptionCandidateSelector struct {
 	// Required.
 	RelationRequirement PreemptionRelationConstraint
 
-	// Accepts all if not set.
-	// Cannot be set if RelationRequirement is SameLocalQueue or SameClusterQueue.
-	Quota QuotaConstraint
-
-	// Accepts all if not set.
-	ClusterQueueSelector metav1.LabelSelector
-
 	// Accepts all if not set
-	WorkloadSelector metav1.LabelSelector
-
-	// Accepts all if not set
-	HostNodeSelector metav1.LabelSelector
-
-	// Matches all workload priority classes if not set.
-	PreemptingWorkloadPrioritySelector metav1.LabelSelector
-
-	// Matches all workload priority classes if not set.
-	CandidateWorkloadPrioritySelector metav1.LabelSelector
+	// Filter candidate workloads using custom numeric labels from the workload
+	// resource.
+	// Multiple numeric labels are joined using AND-rule (all have to be satisfied).
+	NumericLabels []NumericLabelConstraint
 
 	// The comparison is made against the preempting workload.
 	// Lower means that the candidate
 	// has lower priority than the preemptor and so on. No check is made
 	// if the field is nil.
-	RelativeWorkloadPrioirty *RelativeConstraint
-
-	// Accepts any execution times if not set
-	MinExecutionTimeSeconds *int64
-	MaxExecutionTimeSeconds *int64
-	ExecutionTimeRelation   *RelativeConstraint
-
-	// Accepts any time from creation if not set
-	MinTimeFromCreationSeconds *int64
-	MaxTimeFromCreationSeconds *int64
-	TimeFromCreationRelation   *RelativeConstraint
+	RelativeWorkloadPriority *RelativeConstraint
 }
 
 type OrderingField string
@@ -175,6 +143,4 @@ type OrderingField string
 const (
 	Priority           OrderingField = "Priority"
 	AdmissionTimestamp OrderingField = "AdmissionTimestamp"
-	IsOtherCQ          OrderingField = "IsOtherCQ"
-	IsOtherCohort      OrderingField = "IsOtherCohort"
 )

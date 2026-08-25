@@ -18,9 +18,16 @@ package config
 
 import (
 	"iter"
+	"maps"
+	"slices"
 
+	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/clock"
 	"sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/selectors"
 	"sigs.k8s.io/kueue/pkg/workload"
 )
 
@@ -34,33 +41,65 @@ func NewPreemptionEvaluator(candidates []*workload.Info) *preemptionEvaluator {
 	}
 }
 
-func findCandidates(config v1beta2.PreemptionConfig, preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot) []*workload.Info {
+func findCandidates(log logr.Logger, clock clock.Clock, config v1beta2.PreemptionConfig, preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot) ([]*workload.Info, error) {
 	activeRules := []v1beta2.PreemptionRule{}
 	for _, rule := range config.Spec.Rules {
-		if isActiveTrigger(rule, preemptor) {
+		isActive, err := isActiveTrigger(clock, rule, preemptor)
+		if err != nil {
+			return nil, err
+		}
+
+		if isActive {
 			activeRules = append(activeRules, rule)
 		}
 	}
 
 	candidates := []*workload.Info{}
+	// TODO: implement once more selectors available
+	selectors := []selectors.CandidateSelector{}
 	for _, targetCq := range preemptorCq.Parent().Root().SubtreeClusterQueues() {
-		for _, wlInfo := range targetCq.Workloads {
-			if isActiveCandidate(activeRules, preemptorCq, preemptor, targetCq, wlInfo) {
-				candidates = append(candidates, wlInfo)
+		// TODO: too many potential allocations, maybe change interface?
+		targetCandidates := slices.Collect(maps.Values(targetCq.Workloads))
+		for _, selector := range selectors {
+			targetCandidates = selector.Filter(log, preemptor, targetCandidates)
+		}
+		candidates = append(candidates, targetCandidates...)
+	}
+
+	return candidates, nil
+}
+
+func isActiveTrigger(clock clock.Clock, rule v1beta2.PreemptionRule, wlInfo *workload.Info) (bool, error) {
+	for _, condition := range wlInfo.Obj.Status.Conditions {
+		if condition.Status == metav1.ConditionTrue &&
+			condition.Type == string(rule.Trigger) &&
+			int(clock.Since(condition.LastTransitionTime.Time).Seconds()) >= rule.MinTriggerRequiredDurationSeconds {
+
+			selector, err := metav1.LabelSelectorAsSelector(&rule.MatchingPreemptorWorkloads)
+			if err != nil {
+				return false, err
+			}
+
+			if selector.Matches(labels.Set(wlInfo.Obj.Labels)) {
+				return true, nil
 			}
 		}
 	}
-	return candidates
+	return false, nil
 }
 
-func isActiveTrigger(rule v1beta2.PreemptionRule, _ *workload.Info) bool {
-	// Will be implemented later
-	return true
-}
+func isAnyTriggerActive(clock clock.Clock, rules []v1beta2.PreemptionRule, wlInfo *workload.Info) (bool, error) {
+	for _, rule := range rules {
+		isActive, err := isActiveTrigger(clock, rule, wlInfo)
+		if err != nil {
+			return false, err
+		}
 
-func isActiveCandidate(_ []v1beta2.PreemptionRule, _ *schdcache.ClusterQueueSnapshot, _ *workload.Info, _ *schdcache.ClusterQueueSnapshot, _ *workload.Info) bool {
-	// Will be implemented later
-	return true
+		if isActive {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (p *preemptionEvaluator) Iter() iter.Seq[*workload.Info] {
