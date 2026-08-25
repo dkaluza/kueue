@@ -18,33 +18,57 @@ package config
 
 import (
 	"iter"
-	"maps"
-	"slices"
 
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/clock"
 	"sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
+	"sigs.k8s.io/kueue/pkg/resources"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/classical"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/selectors"
 	"sigs.k8s.io/kueue/pkg/workload"
 )
 
+type SelectorFactory func(rules []v1beta2.PreemptionRule) selectors.CandidateSelector
+
 type preemptionEvaluator struct {
-	candidates []*workload.Info
+	log             logr.Logger
+	clock           clock.Clock
+	config          v1beta2.PreemptionConfig
+	selectorFactory SelectorFactory
 }
 
-func NewPreemptionEvaluator(candidates []*workload.Info) *preemptionEvaluator {
+func NewPreemptionEvaluator(log logr.Logger, clock clock.Clock, config v1beta2.PreemptionConfig, selectorFactory SelectorFactory) *preemptionEvaluator {
 	return &preemptionEvaluator{
-		candidates: candidates,
+		log:             log,
+		clock:           clock,
+		config:          config,
+		selectorFactory: selectorFactory,
 	}
 }
 
-func findCandidates(log logr.Logger, clock clock.Clock, config v1beta2.PreemptionConfig, preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot) ([]*workload.Info, error) {
+func (p *preemptionEvaluator) Iter(preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot, frsNeedPreemption sets.Set[resources.FlavorResource]) (iter.Seq[*workload.Info], error) {
+	candidates, err := p.findCandidates(preemptor, preemptorCq, frsNeedPreemption)
+	if err != nil {
+		return nil, err
+	}
+
+	return func(yield func(*workload.Info) bool) {
+		for _, candidate := range candidates {
+			if !yield(candidate) {
+				return
+			}
+		}
+	}, nil
+}
+
+func (p *preemptionEvaluator) findCandidates(preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot, frsNeedPreemption sets.Set[resources.FlavorResource]) ([]*workload.Info, error) {
 	activeRules := []v1beta2.PreemptionRule{}
-	for _, rule := range config.Spec.Rules {
-		isActive, err := isActiveTrigger(clock, rule, preemptor)
+	for _, rule := range p.config.Spec.Rules {
+		isActive, err := p.isActiveTrigger(rule, preemptor)
 		if err != nil {
 			return nil, err
 		}
@@ -54,44 +78,65 @@ func findCandidates(log logr.Logger, clock clock.Clock, config v1beta2.Preemptio
 		}
 	}
 
+	selector := p.selectorFactory(activeRules)
 	candidates := []*workload.Info{}
-	// TODO: implement once more selectors available
-	selectors := []selectors.CandidateSelector{}
+
 	for _, targetCq := range preemptorCq.Parent().Root().SubtreeClusterQueues() {
-		// TODO: too many potential allocations, maybe change interface?
-		targetCandidates := slices.Collect(maps.Values(targetCq.Workloads))
-		for _, selector := range selectors {
-			targetCandidates = selector.Filter(log, preemptor, targetCandidates)
+		if !cqIsBorrowing(targetCq, frsNeedPreemption) {
+			continue
 		}
+
+		targetCandidates := []*workload.Info{}
+		for _, wlInfo := range targetCq.Workloads {
+			if classical.WorkloadUsesResources(wlInfo, frsNeedPreemption) {
+				targetCandidates = append(targetCandidates, wlInfo)
+			}
+		}
+
+		targetCandidates = selector.Filter(p.log, preemptor, targetCandidates)
 		candidates = append(candidates, targetCandidates...)
 	}
 
 	return candidates, nil
 }
 
-func isActiveTrigger(clock clock.Clock, rule v1beta2.PreemptionRule, wlInfo *workload.Info) (bool, error) {
-	for _, condition := range wlInfo.Obj.Status.Conditions {
-		if condition.Status == metav1.ConditionTrue &&
-			condition.Type == string(rule.Trigger) &&
-			int(clock.Since(condition.LastTransitionTime.Time).Seconds()) >= rule.MinTriggerRequiredDurationSeconds {
+func cqIsBorrowing(cq *schdcache.ClusterQueueSnapshot, frsNeedPreemption sets.Set[resources.FlavorResource]) bool {
+	if !cq.HasParent() {
+		return false
+	}
+	for fr := range frsNeedPreemption {
+		if cq.Borrowing(fr) {
+			return true
+		}
+	}
+	return false
+}
 
-			selector, err := metav1.LabelSelectorAsSelector(&rule.MatchingPreemptorWorkloads)
+func (p *preemptionEvaluator) isActiveTrigger(rule v1beta2.PreemptionRule, wlInfo *workload.Info) (bool, error) {
+	for _, condition := range wlInfo.Obj.Status.Conditions {
+		if condition.Status == metav1.ConditionTrue && condition.Type == string(rule.Trigger) {
+			if p.clock.Since(condition.LastTransitionTime.Time) < rule.MinTriggerRequiredDuration.Duration {
+				return false, nil
+			}
+
+			selector, err := metav1.LabelSelectorAsSelector(rule.MatchingPreemptorWorkloads)
 			if err != nil {
 				return false, err
 			}
 
-			if selector.Matches(labels.Set(wlInfo.Obj.Labels)) {
-				return true, nil
+			if !selector.Matches(labels.Set(wlInfo.Obj.Labels)) {
+				return false, nil
 			}
+
+			return true, nil
 		}
 	}
 	return false, nil
 }
 
-// TODO: make into a method later
-func IsAnyTriggerActive(clock clock.Clock, rules []v1beta2.PreemptionRule, wlInfo *workload.Info) (bool, error) {
-	for _, rule := range rules {
-		isActive, err := isActiveTrigger(clock, rule, wlInfo)
+func (p *preemptionEvaluator) IsAnyTriggerActive(wlInfo *workload.Info) (bool, error) {
+	for _, rule := range p.config.Spec.Rules {
+		isActive, err := p.isActiveTrigger(rule, wlInfo)
 		if err != nil {
 			return false, err
 		}
@@ -101,14 +146,4 @@ func IsAnyTriggerActive(clock clock.Clock, rules []v1beta2.PreemptionRule, wlInf
 		}
 	}
 	return false, nil
-}
-
-func (p *preemptionEvaluator) Iter() iter.Seq[*workload.Info] {
-	return func(yield func(*workload.Info) bool) {
-		for _, candidate := range p.candidates {
-			if !yield(candidate) {
-				return
-			}
-		}
-	}
 }

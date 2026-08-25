@@ -18,69 +18,49 @@ package config
 
 import (
 	"testing"
+	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/utils/clock"
 	"sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
+	"sigs.k8s.io/kueue/pkg/resources"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/selectors"
 	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
 	utiltestingapi "sigs.k8s.io/kueue/pkg/util/testing/v1beta2"
 	"sigs.k8s.io/kueue/pkg/workload"
 )
 
-func TestPreemptionEvaluatorIterationOrder(t *testing.T) {
-	tests := map[string]struct {
-		candidates    []*kueue.Workload
-		wantNameOrder []string
-	}{
-		"empty order for empty candidates": {
-			candidates:    []*kueue.Workload{},
-			wantNameOrder: []string{},
-		},
-	}
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			workloadInfos := []*workload.Info{}
-			for _, wl := range tc.candidates {
-				workloadInfos = append(workloadInfos, workload.NewInfo(wl))
-			}
-
-			p := newPreemptionEvaluator(workloadInfos)
-
-			var gotNameOrder []string
-			for wlInfo := range p.Iter() {
-				gotNameOrder = append(gotNameOrder, wlInfo.Obj.Name)
-			}
-
-			if diff := cmp.Diff(tc.wantNameOrder, gotNameOrder, cmpopts.EquateEmpty()); diff != "" {
-				t.Errorf("preemptionEvaluator.Iter() (-want,+got):\n%s", diff)
-			}
-		})
-	}
-}
-
-func TestFindCandidates(t *testing.T) {
-	flavors := []*kueue.ResourceFlavor{
-		utiltestingapi.MakeResourceFlavor("default").Obj(),
-	}
+func TestPreemptionEvaluatorIter(t *testing.T) {
+	now := time.Now()
+	unitWl := *utiltestingapi.MakeWorkload("unit", "").Request(corev1.ResourceCPU, "1")
 
 	tests := map[string]struct {
 		config             v1beta2.PreemptionConfig
 		cohorts            []*kueue.Cohort
 		clusterQueues      []*kueue.ClusterQueue
 		admitted           []kueue.Workload
-		targetCQ           kueue.ClusterQueueReference
+		preemptorWl        *kueue.Workload
+		preemptorCq        kueue.ClusterQueueReference
 		wantCandidateNames []string
 	}{
-		"no candidates for empty input": {
+		"no candidates for empty config": {
 			clusterQueues: []*kueue.ClusterQueue{
 				utiltestingapi.MakeClusterQueue("a").
 					Cohort("all").
 					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
-						Resource(corev1.ResourceCPU, "3").Obj()).
+						Resource(corev1.ResourceCPU, "1").Obj()).
+					Obj(),
+				utiltestingapi.MakeClusterQueue("b").
+					Cohort("all").
+					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
+						Resource(corev1.ResourceCPU, "1").Obj()).
 					Obj(),
 			},
 			config: v1beta2.PreemptionConfig{
@@ -88,8 +68,12 @@ func TestFindCandidates(t *testing.T) {
 					Rules: []v1beta2.PreemptionRule{},
 				},
 			},
-			admitted:           []kueue.Workload{},
-			targetCQ:           "a",
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			preemptorWl:        unitWl.Clone().Name("wl1").Request(corev1.ResourceCPU, "1").Obj(),
+			preemptorCq:        "b",
 			wantCandidateNames: []string{},
 		},
 	}
@@ -100,13 +84,14 @@ func TestFindCandidates(t *testing.T) {
 			for i := range tc.admitted {
 				tc.admitted[i].UID = types.UID(tc.admitted[i].Name)
 			}
+
 			cl := utiltesting.NewClientBuilder().
 				WithLists(&kueue.WorkloadList{Items: tc.admitted}).
 				Build()
+
 			cqCache := schdcache.New(cl)
-			for _, flv := range flavors {
-				cqCache.AddOrUpdateResourceFlavor(log, flv)
-			}
+			cqCache.AddOrUpdateResourceFlavor(log, utiltestingapi.MakeResourceFlavor("default").Obj())
+
 			for _, cq := range tc.clusterQueues {
 				if err := cqCache.AddClusterQueue(ctx, cq); err != nil {
 					t.Fatalf("Couldn't add ClusterQueue to cache: %v", err)
@@ -123,14 +108,35 @@ func TestFindCandidates(t *testing.T) {
 				t.Fatalf("unexpected error while building snapshot: %v", err)
 			}
 
-			got := findCandidates(tc.config, snapshot.ClusterQueue(tc.targetCQ))
+			evaluator := NewPreemptionEvaluator(log, clock.RealClock{}, tc.config, func(rules []v1beta2.PreemptionRule) selectors.CandidateSelector {
+				return &echoCandidateSelector{}
+			})
+
+			preemptorCqSnapshot := snapshot.ClusterQueue(tc.preemptorCq)
+
+			wlInfo := workload.NewInfo(tc.preemptorWl)
+			wlInfo.ClusterQueue = tc.preemptorCq
+
+			iter, err := evaluator.Iter(wlInfo, preemptorCqSnapshot, sets.New(resources.FlavorResource{Flavor: "default", Resource: corev1.ResourceCPU}))
+			if err != nil {
+				t.Fatalf("unexpected error while creating iterator: %v", err)
+			}
+
 			gotNames := []string{}
-			for _, wlInfo := range got {
+			for wlInfo := range iter {
 				gotNames = append(gotNames, wlInfo.Obj.Name)
 			}
+
 			if diff := cmp.Diff(tc.wantCandidateNames, gotNames, cmpopts.EquateEmpty()); diff != "" {
-				t.Errorf("findCandidates() = %v, want %v", got, tc.wantCandidateNames)
+				t.Errorf("Issued preemptions (-want,+got):\n%s", diff)
 			}
 		})
 	}
+}
+
+type echoCandidateSelector struct {
+}
+
+func (e *echoCandidateSelector) Filter(_ logr.Logger, _ *workload.Info, candidates []*workload.Info) []*workload.Info {
+	return candidates
 }

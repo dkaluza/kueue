@@ -100,11 +100,12 @@ type PreemptionRule struct {
 
 	// Label Selector indicating which workloads can trigger preemptions
 	// using this rule.
-	MatchingPreemptorWorkloads metav1.LabelSelector
+	MatchingPreemptorWorkloads *metav1.LabelSelector
 
 	Trigger PreemptionRuleTrigger
-	// How long the trigger has to occur to start preempting workloads specified by candidates. 0 indicates that preemptions can be started immediately.
-	MinTriggerRequiredDurationSeconds int
+
+	// How long the trigger has to occur to start preempting workloads specified by candidates. 0s indicates that preemptions can be started immediately. Default is 0s.
+	MinTriggerRequiredDuration metav1.Duration
 
 	// Selection rules for workloads that are candidates for preemption.
 	// Candidates resulting from multiple selectors are summed into one set. No selectors result in empty candidate set, thereby disallowing any preemptions with this rule.
