@@ -17,7 +17,9 @@ limitations under the License.
 package config
 
 import (
+	"cmp"
 	"iter"
+	"slices"
 
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,6 +58,10 @@ func (p *preemptionEvaluator) Iter(preemptor *workload.Info, preemptorCq *schdca
 		return nil, err
 	}
 
+	slices.SortFunc(candidates, func(a, b *workload.Info) int {
+		return cmp.Compare(a.Obj.UID, b.Obj.UID)
+	})
+
 	return func(yield func(*workload.Info) bool) {
 		for _, candidate := range candidates {
 			if !yield(candidate) {
@@ -78,10 +84,20 @@ func (p *preemptionEvaluator) findCandidates(preemptor *workload.Info, preemptor
 		}
 	}
 
+	if len(activeRules) == 0 {
+		return nil, nil
+	}
+
+	var clusterQueues []*schdcache.ClusterQueueSnapshot
+	if preemptorCq.HasParent() {
+		clusterQueues = preemptorCq.Parent().Root().SubtreeClusterQueues()
+	} else {
+		clusterQueues = []*schdcache.ClusterQueueSnapshot{preemptorCq}
+	}
+
 	selector := p.selectorFactory(activeRules)
 	candidates := []*workload.Info{}
-
-	for _, targetCq := range preemptorCq.Parent().Root().SubtreeClusterQueues() {
+	for _, targetCq := range clusterQueues {
 		if !cqIsBorrowing(targetCq, frsNeedPreemption) {
 			continue
 		}
