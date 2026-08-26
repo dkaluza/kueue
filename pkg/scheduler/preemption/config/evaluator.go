@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -116,38 +117,26 @@ func (p *preemptionEvaluator) findCandidates(preemptor *workload.Info, preemptor
 	return candidates, nil
 }
 
-func cqIsBorrowing(cq *schdcache.ClusterQueueSnapshot, frsNeedPreemption sets.Set[resources.FlavorResource]) bool {
-	if !cq.HasParent() {
-		return false
-	}
-	for fr := range frsNeedPreemption {
-		if cq.Borrowing(fr) {
-			return true
-		}
-	}
-	return false
-}
-
 func (p *preemptionEvaluator) isActiveTrigger(rule v1beta2.PreemptionRule, wlInfo *workload.Info) (bool, error) {
-	for _, condition := range wlInfo.Obj.Status.Conditions {
-		if condition.Status == metav1.ConditionTrue && condition.Type == string(rule.Trigger) {
-			if p.clock.Since(condition.LastTransitionTime.Time) < rule.MinTriggerRequiredDuration.Duration {
-				return false, nil
-			}
-
-			selector, err := metav1.LabelSelectorAsSelector(&rule.MatchingPreemptorWorkloads)
-			if err != nil {
-				return false, err
-			}
-
-			if !selector.Matches(labels.Set(wlInfo.Obj.Labels)) {
-				return false, nil
-			}
-
-			return true, nil
-		}
+	condition := meta.FindStatusCondition(wlInfo.Obj.Status.Conditions, string(rule.Trigger))
+	if condition == nil || condition.Status == metav1.ConditionFalse {
+		return false, nil
 	}
-	return false, nil
+
+	if p.clock.Since(condition.LastTransitionTime.Time) < rule.MinTriggerRequiredDuration.Duration {
+		return false, nil
+	}
+
+	selector, err := metav1.LabelSelectorAsSelector(&rule.MatchingPreemptorWorkloads)
+	if err != nil {
+		return false, err
+	}
+
+	if !selector.Matches(labels.Set(wlInfo.Obj.Labels)) {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 func (p *preemptionEvaluator) IsAnyTriggerActive(wlInfo *workload.Info) (bool, error) {
