@@ -100,7 +100,7 @@ type PreemptionRule struct {
 
 	// Label Selector indicating which workloads can trigger preemptions
 	// using this rule.
-	MatchingPreemptorWorkloads *metav1.LabelSelector
+	MatchingPreemptorWorkloads metav1.LabelSelector
 
 	Trigger PreemptionRuleTrigger
 

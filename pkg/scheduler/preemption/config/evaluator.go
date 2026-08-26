@@ -119,7 +119,7 @@ func (p *preemptionEvaluator) isActiveTrigger(rule v1beta2.PreemptionRule, wlInf
 				return false, nil
 			}
 
-			selector, err := metav1.LabelSelectorAsSelector(rule.MatchingPreemptorWorkloads)
+			selector, err := metav1.LabelSelectorAsSelector(&rule.MatchingPreemptorWorkloads)
 			if err != nil {
 				return false, err
 			}
