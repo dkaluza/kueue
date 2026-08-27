@@ -128,11 +128,7 @@ func (p *preemptionEvaluator) isActiveTrigger(rule v1beta2.PreemptionRule, wlInf
 		return false, err
 	}
 
-	if !selector.Matches(labels.Set(wlInfo.Obj.Labels)) {
-		return false, nil
-	}
-
-	return true, nil
+	return selector.Matches(labels.Set(wlInfo.Obj.Labels)), nil
 }
 
 func (p *preemptionEvaluator) IsAnyTriggerActive(wlInfo *workload.Info) (bool, error) {
