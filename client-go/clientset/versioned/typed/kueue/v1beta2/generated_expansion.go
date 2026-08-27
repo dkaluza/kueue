@@ -30,6 +30,8 @@ type MultiKueueClusterExpansion interface{}
 
 type MultiKueueConfigExpansion interface{}
 
+type PreemptionConfigExpansion interface{}
+
 type ProvisioningRequestConfigExpansion interface{}
 
 type ResourceFlavorExpansion interface{}

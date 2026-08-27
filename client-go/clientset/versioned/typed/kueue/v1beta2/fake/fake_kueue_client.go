@@ -52,6 +52,10 @@ func (c *FakeKueueV1beta2) MultiKueueConfigs() v1beta2.MultiKueueConfigInterface
 	return newFakeMultiKueueConfigs(c)
 }
 
+func (c *FakeKueueV1beta2) PreemptionConfigs() v1beta2.PreemptionConfigInterface {
+	return newFakePreemptionConfigs(c)
+}
+
 func (c *FakeKueueV1beta2) ProvisioningRequestConfigs() v1beta2.ProvisioningRequestConfigInterface {
 	return newFakeProvisioningRequestConfigs(c)
 }

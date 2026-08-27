@@ -92,6 +92,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Kueue().V1beta2().MultiKueueClusters().Informer()}, nil
 	case v1beta2.SchemeGroupVersion.WithResource("multikueueconfigs"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Kueue().V1beta2().MultiKueueConfigs().Informer()}, nil
+	case v1beta2.SchemeGroupVersion.WithResource("preemptionconfigs"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Kueue().V1beta2().PreemptionConfigs().Informer()}, nil
 	case v1beta2.SchemeGroupVersion.WithResource("provisioningrequestconfigs"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Kueue().V1beta2().ProvisioningRequestConfigs().Informer()}, nil
 	case v1beta2.SchemeGroupVersion.WithResource("resourceflavors"):

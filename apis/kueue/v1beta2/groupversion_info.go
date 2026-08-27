@@ -43,6 +43,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&Cohort{}, &CohortList{},
 		&LocalQueue{}, &LocalQueueList{},
 		&MultiKueueConfig{}, &MultiKueueConfigList{}, &MultiKueueCluster{}, &MultiKueueClusterList{},
+		&PreemptionConfig{}, &PreemptionConfigList{},
 		&ProvisioningRequestConfig{}, &ProvisioningRequestConfigList{},
 		&ResourceFlavor{}, &ResourceFlavorList{},
 		&Topology{}, &TopologyList{},

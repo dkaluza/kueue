@@ -46,6 +46,10 @@ type MultiKueueClusterListerExpansion interface{}
 // MultiKueueConfigLister.
 type MultiKueueConfigListerExpansion interface{}
 
+// PreemptionConfigListerExpansion allows custom methods to be added to
+// PreemptionConfigLister.
+type PreemptionConfigListerExpansion interface{}
+
 // ProvisioningRequestConfigListerExpansion allows custom methods to be added to
 // ProvisioningRequestConfigLister.
 type ProvisioningRequestConfigListerExpansion interface{}

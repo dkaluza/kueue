@@ -36,6 +36,8 @@ type Interface interface {
 	MultiKueueClusters() MultiKueueClusterInformer
 	// MultiKueueConfigs returns a MultiKueueConfigInformer.
 	MultiKueueConfigs() MultiKueueConfigInformer
+	// PreemptionConfigs returns a PreemptionConfigInformer.
+	PreemptionConfigs() PreemptionConfigInformer
 	// ProvisioningRequestConfigs returns a ProvisioningRequestConfigInformer.
 	ProvisioningRequestConfigs() ProvisioningRequestConfigInformer
 	// ResourceFlavors returns a ResourceFlavorInformer.
@@ -87,6 +89,11 @@ func (v *version) MultiKueueClusters() MultiKueueClusterInformer {
 // MultiKueueConfigs returns a MultiKueueConfigInformer.
 func (v *version) MultiKueueConfigs() MultiKueueConfigInformer {
 	return &multiKueueConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// PreemptionConfigs returns a PreemptionConfigInformer.
+func (v *version) PreemptionConfigs() PreemptionConfigInformer {
+	return &preemptionConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // ProvisioningRequestConfigs returns a ProvisioningRequestConfigInformer.

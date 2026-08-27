@@ -34,6 +34,7 @@ type KueueV1beta2Interface interface {
 	LocalQueuesGetter
 	MultiKueueClustersGetter
 	MultiKueueConfigsGetter
+	PreemptionConfigsGetter
 	ProvisioningRequestConfigsGetter
 	ResourceFlavorsGetter
 	TopologiesGetter
@@ -68,6 +69,10 @@ func (c *KueueV1beta2Client) MultiKueueClusters() MultiKueueClusterInterface {
 
 func (c *KueueV1beta2Client) MultiKueueConfigs() MultiKueueConfigInterface {
 	return newMultiKueueConfigs(c)
+}
+
+func (c *KueueV1beta2Client) PreemptionConfigs() PreemptionConfigInterface {
+	return newPreemptionConfigs(c)
 }
 
 func (c *KueueV1beta2Client) ProvisioningRequestConfigs() ProvisioningRequestConfigInterface {

@@ -71,20 +71,34 @@ type NumericLabelConstraint struct {
 	MaxValue *int32 `json:"maxValue,omitempty"`
 }
 
+// +genclient
+// +genclient:nonNamespaced
+// +kubebuilder:object:root=true
+// +kubebuilder:storageversion
+// +kubebuilder:resource:scope=Cluster,shortName={preempcfg}
 type PreemptionConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              PreemptionConfigSpec `json:"spec,omitempty"`
 }
 
+// +kubebuilder:object:root=true
+
+// PreemptionConfigList contains a list of PreemptionConfig
+type PreemptionConfigList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []PreemptionConfig `json:"items"`
+}
+
 type PreemptionConfigSpec struct {
 	// Rules to select preemption candidates.
-	Rules []PreemptionRule
+	Rules []PreemptionRule `json:"rules,omitempty"`
 	// Ordering of the preemption candidates.
 	// The order will be always deterministic, as UID
 	// of the workloads is used to break the ties
 	// If not set workloads will be just ordered by UID.
-	Ordering []OrderingField
+	Ordering []OrderingField `json:"ordering,omitempty"`
 }
 
 type PreemptionRuleTrigger string
@@ -96,20 +110,20 @@ const (
 )
 
 type PreemptionRule struct {
-	Name string
+	Name string `json:"name,omitempty"`
 
 	// Label Selector indicating which workloads can trigger preemptions
 	// using this rule.
-	MatchingPreemptorWorkloads metav1.LabelSelector
+	MatchingPreemptorWorkloads metav1.LabelSelector `json:"matchingPreemptorWorkloads,omitempty"`
 
-	Trigger PreemptionRuleTrigger
+	Trigger PreemptionRuleTrigger `json:"trigger,omitempty"`
 
 	// How long the trigger has to occur to start preempting workloads specified by candidates. 0s indicates that preemptions can be started immediately. Default is 0s.
-	MinTriggerRequiredDuration metav1.Duration
+	MinTriggerRequiredDuration metav1.Duration `json:"minTriggerRequiredDuration,omitempty"`
 
 	// Selection rules for workloads that are candidates for preemption.
 	// Candidates resulting from multiple selectors are summed into one set. No selectors result in empty candidate set, thereby disallowing any preemptions with this rule.
-	Candidates []PreemptionCandidateSelector
+	Candidates []PreemptionCandidateSelector `json:"candidates,omitempty"`
 }
 
 type PreemptionRelationConstraint string
@@ -124,19 +138,19 @@ const (
 
 type PreemptionCandidateSelector struct {
 	// Required.
-	RelationRequirement PreemptionRelationConstraint
+	RelationRequirement PreemptionRelationConstraint `json:"relationRequirement,omitempty"`
 
 	// Accepts all if not set
 	// Filter candidate workloads using custom numeric labels from the workload
 	// resource.
 	// Multiple numeric labels are joined using AND-rule (all have to be satisfied).
-	NumericLabels []NumericLabelConstraint
+	NumericLabels []NumericLabelConstraint `json:"numericLabels,omitempty"`
 
 	// The comparison is made against the preempting workload.
 	// Lower means that the candidate
 	// has lower priority than the preemptor and so on. No check is made
 	// if the field is nil.
-	RelativeWorkloadPriority *RelativeConstraint
+	RelativeWorkloadPriority *RelativeConstraint `json:"relativeWorkloadPriority,omitempty"`
 }
 
 type OrderingField string

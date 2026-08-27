@@ -256,6 +256,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &kueuev1beta2.MultiKueueConfigApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("MultiKueueConfigSpec"):
 		return &kueuev1beta2.MultiKueueConfigSpecApplyConfiguration{}
+	case v1beta2.SchemeGroupVersion.WithKind("NumericLabelConstraint"):
+		return &kueuev1beta2.NumericLabelConstraintApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("PodSet"):
 		return &kueuev1beta2.PodSetApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("PodSetAssignment"):
@@ -268,10 +270,18 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &kueuev1beta2.PodSetTopologyRequestApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("PodSetUpdate"):
 		return &kueuev1beta2.PodSetUpdateApplyConfiguration{}
+	case v1beta2.SchemeGroupVersion.WithKind("PreemptionCandidateSelector"):
+		return &kueuev1beta2.PreemptionCandidateSelectorApplyConfiguration{}
+	case v1beta2.SchemeGroupVersion.WithKind("PreemptionConfig"):
+		return &kueuev1beta2.PreemptionConfigApplyConfiguration{}
+	case v1beta2.SchemeGroupVersion.WithKind("PreemptionConfigSpec"):
+		return &kueuev1beta2.PreemptionConfigSpecApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("PreemptionGate"):
 		return &kueuev1beta2.PreemptionGateApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("PreemptionGateState"):
 		return &kueuev1beta2.PreemptionGateStateApplyConfiguration{}
+	case v1beta2.SchemeGroupVersion.WithKind("PreemptionRule"):
+		return &kueuev1beta2.PreemptionRuleApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("PriorityClassRef"):
 		return &kueuev1beta2.PriorityClassRefApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("ProvisioningRequestConfig"):
