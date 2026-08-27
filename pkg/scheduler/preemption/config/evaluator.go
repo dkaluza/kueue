@@ -53,8 +53,8 @@ func NewPreemptionEvaluator(log logr.Logger, clock clock.Clock, config v1beta2.P
 	}
 }
 
-func (p *preemptionEvaluator) Iter(preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot, flavorsNeedPreemption sets.Set[resources.FlavorResource]) (iter.Seq[*workload.Info], error) {
-	candidates, err := p.findCandidates(preemptor, preemptorCq, flavorsNeedPreemption)
+func (p *preemptionEvaluator) Iter(snapshot *schdcache.Snapshot, preemptor *workload.Info, flavorsNeedPreemption sets.Set[resources.FlavorResource]) (iter.Seq[*workload.Info], error) {
+	candidates, err := p.findCandidates(snapshot, preemptor, flavorsNeedPreemption)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (p *preemptionEvaluator) Iter(preemptor *workload.Info, preemptorCq *schdca
 	}, nil
 }
 
-func (p *preemptionEvaluator) findCandidates(preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot, flavorsNeedPreemption sets.Set[resources.FlavorResource]) ([]*workload.Info, error) {
+func (p *preemptionEvaluator) findCandidates(snapshot *schdcache.Snapshot, preemptor *workload.Info, flavorsNeedPreemption sets.Set[resources.FlavorResource]) ([]*workload.Info, error) {
 	activeRules := []v1beta2.PreemptionRule{}
 	for _, rule := range p.config.Spec.Rules {
 		isActive, err := p.isActiveTrigger(rule, preemptor)
@@ -89,16 +89,12 @@ func (p *preemptionEvaluator) findCandidates(preemptor *workload.Info, preemptor
 		return nil, nil
 	}
 
-	var clusterQueues []*schdcache.ClusterQueueSnapshot
-	if preemptorCq.HasParent() {
-		clusterQueues = preemptorCq.Parent().Root().SubtreeClusterQueues()
-	} else {
-		clusterQueues = []*schdcache.ClusterQueueSnapshot{preemptorCq}
-	}
-
 	selector := p.selectorFactory(activeRules)
 	candidates := []*workload.Info{}
-	for _, targetCq := range clusterQueues {
+
+	// It might not be needed to iterate over all ClusterQueues,
+	// it depends on the selector's config. Can be improved later.
+	for _, targetCq := range snapshot.ClusterQueues() {
 		targetCandidates := []*workload.Info{}
 		for _, wlInfo := range targetCq.Workloads {
 			if classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {

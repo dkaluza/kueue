@@ -341,6 +341,47 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			preemptorCq: "a",
 			wantWlOrder: []string{},
 		},
+		"returns candidates from ClusterQueues not under the same root": {
+			clusterQueues: []*kueue.ClusterQueue{
+				utiltestingapi.MakeClusterQueue("a").
+					Cohort("a-cohort").
+					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
+						Resource(corev1.ResourceCPU, "1").Obj()).
+					Obj(),
+				utiltestingapi.MakeClusterQueue("b").
+					Cohort("b-cohort").
+					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
+						Resource(corev1.ResourceCPU, "1").Obj()).
+					Obj(),
+				utiltestingapi.MakeClusterQueue("c").
+					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
+						Resource(corev1.ResourceCPU, "1").Obj()).
+					Obj(),
+			},
+			config: v1beta2.PreemptionConfig{
+				Spec: v1beta2.PreemptionConfigSpec{
+					Rules: []v1beta2.PreemptionRule{
+						{
+							Name:    "test",
+							Trigger: v1beta2.InsufficientTopology,
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.AnyClusterQueue,
+								},
+							},
+						},
+					},
+				},
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("b1").SimpleReserveQuota("b", "default", now).Obj(),
+				*unitWl.Clone().Name("c1").SimpleReserveQuota("c", "default", now).Obj(),
+			},
+			preemptorWl: unitWl.Clone().Name("a-incoming").Condition(insufficientTopologyCond).Obj(),
+			preemptorCq: "a",
+			wantWlOrder: []string{"a1", "b1", "c1"},
+		},
 	}
 
 	for name, tc := range tests {
@@ -376,12 +417,11 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 
 			evaluator := NewPreemptionEvaluator(log, clock.RealClock{}, tc.config, testSelectorFactory)
 
-			preemptorCqSnapshot := snapshot.ClusterQueue(tc.preemptorCq)
-
 			wlInfo := workload.NewInfo(tc.preemptorWl)
 			wlInfo.ClusterQueue = tc.preemptorCq
 
-			iter, err := evaluator.Iter(wlInfo, preemptorCqSnapshot, sets.New(resources.FlavorResource{Flavor: "default", Resource: corev1.ResourceCPU}))
+			frsNeedPreemption := sets.New(resources.FlavorResource{Flavor: "default", Resource: corev1.ResourceCPU})
+			iter, err := evaluator.Iter(snapshot, wlInfo, frsNeedPreemption)
 			if err != nil || tc.wantError != "" {
 				gotError := ""
 				if err != nil {
