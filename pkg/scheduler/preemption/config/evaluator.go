@@ -53,8 +53,8 @@ func NewPreemptionEvaluator(log logr.Logger, clock clock.Clock, config v1beta2.P
 	}
 }
 
-func (p *preemptionEvaluator) Iter(preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot, frsNeedPreemption sets.Set[resources.FlavorResource]) (iter.Seq[*workload.Info], error) {
-	candidates, err := p.findCandidates(preemptor, preemptorCq, frsNeedPreemption)
+func (p *preemptionEvaluator) Iter(preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot, flavorsNeedPreemption sets.Set[resources.FlavorResource]) (iter.Seq[*workload.Info], error) {
+	candidates, err := p.findCandidates(preemptor, preemptorCq, flavorsNeedPreemption)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (p *preemptionEvaluator) Iter(preemptor *workload.Info, preemptorCq *schdca
 	}, nil
 }
 
-func (p *preemptionEvaluator) findCandidates(preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot, frsNeedPreemption sets.Set[resources.FlavorResource]) ([]*workload.Info, error) {
+func (p *preemptionEvaluator) findCandidates(preemptor *workload.Info, preemptorCq *schdcache.ClusterQueueSnapshot, flavorsNeedPreemption sets.Set[resources.FlavorResource]) ([]*workload.Info, error) {
 	activeRules := []v1beta2.PreemptionRule{}
 	for _, rule := range p.config.Spec.Rules {
 		isActive, err := p.isActiveTrigger(rule, preemptor)
@@ -99,13 +99,9 @@ func (p *preemptionEvaluator) findCandidates(preemptor *workload.Info, preemptor
 	selector := p.selectorFactory(activeRules)
 	candidates := []*workload.Info{}
 	for _, targetCq := range clusterQueues {
-		if !cqIsBorrowing(targetCq, frsNeedPreemption) {
-			continue
-		}
-
 		targetCandidates := []*workload.Info{}
 		for _, wlInfo := range targetCq.Workloads {
-			if classical.WorkloadUsesResources(wlInfo, frsNeedPreemption) {
+			if classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
 				targetCandidates = append(targetCandidates, wlInfo)
 			}
 		}

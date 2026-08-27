@@ -82,31 +82,6 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 		// rare options for full testing coverage
 		haltIterationAfterNWorkloads int
 	}{
-		"no candidates for CQ without cohort(it cannot borrow)": {
-			clusterQueues: []*kueue.ClusterQueue{
-				utiltestingapi.MakeClusterQueue("a").
-					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
-						Resource(corev1.ResourceCPU, "2").Obj()).
-					Obj(),
-			},
-			config: v1beta2.PreemptionConfig{
-				Spec: v1beta2.PreemptionConfigSpec{
-					Rules: []v1beta2.PreemptionRule{
-						{
-							Name:    "test",
-							Trigger: v1beta2.InsufficientQuota,
-						},
-					},
-				},
-			},
-			admitted: []kueue.Workload{
-				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
-				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
-			},
-			preemptorWl: unitWl.Clone().Name("a-incoming").Condition(insufficientQuotaCond).Obj(),
-			preemptorCq: "a",
-			wantWlOrder: []string{},
-		},
 		"no candidates for empty config": {
 			clusterQueues: baseCqs,
 			config: v1beta2.PreemptionConfig{
@@ -169,6 +144,31 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			preemptorWl: unitWl.Clone().Name("a-incoming").Condition(insufficientQuotaCond).Obj(),
 			preemptorCq: "a",
 			wantError:   "\"invalid\" is not a valid label selector operator",
+		},
+		"selects candidates for CQ without cohort": {
+			clusterQueues: []*kueue.ClusterQueue{
+				utiltestingapi.MakeClusterQueue("a").
+					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
+						Resource(corev1.ResourceCPU, "2").Obj()).
+					Obj(),
+			},
+			config: v1beta2.PreemptionConfig{
+				Spec: v1beta2.PreemptionConfigSpec{
+					Rules: []v1beta2.PreemptionRule{
+						{
+							Name:    "test",
+							Trigger: v1beta2.InsufficientQuota,
+						},
+					},
+				},
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			preemptorWl: unitWl.Clone().Name("a-incoming").Condition(insufficientQuotaCond).Obj(),
+			preemptorCq: "a",
+			wantWlOrder: []string{"a1", "a2"},
 		},
 		"selects candidates for InsufficientQuota trigger": {
 			clusterQueues: baseCqs,
@@ -251,7 +251,7 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			preemptorCq: "a",
 			wantWlOrder: []string{},
 		},
-		"trigger matched by labels selector": {
+		"rule with matching preemptor labels selector is triggered for matching workload": {
 			clusterQueues: baseCqs,
 			config: v1beta2.PreemptionConfig{
 				Spec: v1beta2.PreemptionConfigSpec{
@@ -298,7 +298,7 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			haltIterationAfterNWorkloads: 1,
 			wantWlOrder:                  []string{"a1"},
 		},
-		"trigger isn't active because of labels selector": {
+		"rule does not apply because of not matching preemptor labels selector": {
 			clusterQueues: baseCqs,
 			config: v1beta2.PreemptionConfig{
 				Spec: v1beta2.PreemptionConfigSpec{
@@ -318,6 +318,26 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
 			},
 			preemptorWl: unitWl.Clone().Name("a-incoming").Condition(insufficientTopologyCond).Obj(),
+			preemptorCq: "a",
+			wantWlOrder: []string{},
+		},
+		"rule does not apply because of not matching different condition on preemptor's workload": {
+			clusterQueues: baseCqs,
+			config: v1beta2.PreemptionConfig{
+				Spec: v1beta2.PreemptionConfigSpec{
+					Rules: []v1beta2.PreemptionRule{
+						{
+							Name:    "test",
+							Trigger: v1beta2.InsufficientTopology,
+						},
+					},
+				},
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			preemptorWl: unitWl.Clone().Name("a-incoming").Condition(quotaReclaimRequiredCond).Obj(),
 			preemptorCq: "a",
 			wantWlOrder: []string{},
 		},
