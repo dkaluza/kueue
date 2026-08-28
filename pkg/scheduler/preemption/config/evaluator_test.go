@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	corev1 "k8s.io/api/core/v1"
@@ -32,7 +31,7 @@ import (
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/resources"
-	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/selectors"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/filters"
 	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
 	utiltestingapi "sigs.k8s.io/kueue/pkg/util/testing/v1beta2"
 	"sigs.k8s.io/kueue/pkg/workload"
@@ -158,6 +157,11 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 						{
 							Name:    "test",
 							Trigger: v1beta2.InsufficientQuota,
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.SameCohortTree,
+								},
+							},
 						},
 					},
 				},
@@ -178,6 +182,11 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 						{
 							Name:    "test",
 							Trigger: v1beta2.InsufficientQuota,
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.SameCohortTree,
+								},
+							},
 						},
 					},
 				},
@@ -198,6 +207,11 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 						{
 							Name:    "test",
 							Trigger: v1beta2.QuotaReclaimRequired,
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.SameCohortTree,
+								},
+							},
 						},
 					},
 				},
@@ -218,6 +232,11 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 						{
 							Name:    "test",
 							Trigger: v1beta2.InsufficientTopology,
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.SameCohortTree,
+								},
+							},
 						},
 					},
 				},
@@ -262,6 +281,11 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 							MatchingPreemptorWorkloads: metav1.LabelSelector{
 								MatchLabels: map[string]string{"active": "true"},
 							},
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.SameCohortTree,
+								},
+							},
 						},
 					},
 				},
@@ -284,6 +308,11 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 							Trigger: v1beta2.InsufficientTopology,
 							MatchingPreemptorWorkloads: metav1.LabelSelector{
 								MatchLabels: map[string]string{"active": "true"},
+							},
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.SameCohortTree,
+								},
 							},
 						},
 					},
@@ -321,7 +350,7 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			preemptorCq: "a",
 			wantWlOrder: []string{},
 		},
-		"rule does not apply because of not matching different condition on preemptor's workload": {
+		"rule does not apply because of different condition on preemptor's workload": {
 			clusterQueues: baseCqs,
 			config: v1beta2.PreemptionConfig{
 				Spec: v1beta2.PreemptionConfigSpec{
@@ -382,6 +411,99 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			preemptorCq: "a",
 			wantWlOrder: []string{"a1", "b1", "c1"},
 		},
+		"returns candidates based on selectors from matched trigger": {
+			clusterQueues: baseCqs,
+			config: v1beta2.PreemptionConfig{
+				Spec: v1beta2.PreemptionConfigSpec{
+					Rules: []v1beta2.PreemptionRule{
+						{
+							Name:    "topology rule",
+							Trigger: v1beta2.InsufficientTopology,
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.SameClusterQueue,
+								},
+							},
+						},
+						{
+							Name:    "quota rule",
+							Trigger: v1beta2.InsufficientQuota,
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.SameCohortTree,
+								},
+							},
+						},
+					},
+				},
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("b1").SimpleReserveQuota("b", "default", now).Obj(),
+			},
+			preemptorWl: unitWl.Clone().Name("a-incoming").Condition(insufficientTopologyCond).Obj(),
+			preemptorCq: "a",
+			wantWlOrder: []string{"a1"},
+		},
+		"returns candidates which use preemptable resource": {
+			clusterQueues: baseCqs,
+			config: v1beta2.PreemptionConfig{
+				Spec: v1beta2.PreemptionConfigSpec{
+					Rules: []v1beta2.PreemptionRule{
+						{
+							Name:    "topology rule",
+							Trigger: v1beta2.InsufficientTopology,
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.SameCohortTree,
+								},
+							},
+						},
+					},
+				},
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "other-flavor", now).Obj(),
+			},
+			preemptorWl: unitWl.Clone().Name("a-incoming").Condition(insufficientTopologyCond).Obj(),
+			preemptorCq: "a",
+			wantWlOrder: []string{"a1"},
+		},
+		"returns non repeating candidates even when same candidates matched by different trigger rules": {
+			clusterQueues: baseCqs,
+			config: v1beta2.PreemptionConfig{
+				Spec: v1beta2.PreemptionConfigSpec{
+					Rules: []v1beta2.PreemptionRule{
+						{
+							Name:    "first rule",
+							Trigger: v1beta2.InsufficientTopology,
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.SameClusterQueue,
+								},
+							},
+						},
+						{
+							Name:    "second rule",
+							Trigger: v1beta2.InsufficientTopology,
+							Candidates: []v1beta2.PreemptionCandidateSelector{
+								{
+									RelationRequirement: v1beta2.SameCohortTree,
+								},
+							},
+						},
+					},
+				},
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("b1").SimpleReserveQuota("b", "default", now).Obj(),
+			},
+			preemptorWl: unitWl.Clone().Name("a-incoming").Condition(insufficientTopologyCond).Obj(),
+			preemptorCq: "a",
+			wantWlOrder: []string{"a1", "b1"},
+		},
 	}
 
 	for name, tc := range tests {
@@ -398,6 +520,7 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 
 			cqCache := schdcache.New(cl)
 			cqCache.AddOrUpdateResourceFlavor(log, utiltestingapi.MakeResourceFlavor("default").Obj())
+			cqCache.AddOrUpdateResourceFlavor(log, utiltestingapi.MakeResourceFlavor("other-flavour").Obj())
 
 			for _, cq := range tc.clusterQueues {
 				if err := cqCache.AddClusterQueue(ctx, cq); err != nil {
@@ -415,7 +538,7 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 				t.Fatalf("unexpected error while building snapshot: %v", err)
 			}
 
-			evaluator := NewPreemptionEvaluator(log, clock.RealClock{}, tc.config, testSelectorFactory)
+			evaluator := NewPreemptionEvaluator(log, clock.RealClock{}, tc.config, filters.NewCandidateFilters)
 
 			wlInfo := workload.NewInfo(tc.preemptorWl)
 			wlInfo.ClusterQueue = tc.preemptorCq
@@ -447,17 +570,6 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			}
 		})
 	}
-}
-
-func testSelectorFactory(_ []v1beta2.PreemptionRule) selectors.CandidateSelector {
-	return &TestCandidateSelector{}
-}
-
-type TestCandidateSelector struct {
-}
-
-func (e *TestCandidateSelector) Filter(_ logr.Logger, _ *workload.Info, candidates []*workload.Info) []*workload.Info {
-	return candidates
 }
 
 func Test_preemptionEvaluator_IsAnyTriggerActive(t *testing.T) {
@@ -523,7 +635,7 @@ func Test_preemptionEvaluator_IsAnyTriggerActive(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, log := utiltesting.ContextWithLog(t)
-			p := NewPreemptionEvaluator(log, clock.RealClock{}, tc.config, testSelectorFactory)
+			p := NewPreemptionEvaluator(log, clock.RealClock{}, tc.config, filters.NewCandidateFilters)
 
 			wlInfo := workload.NewInfo(tc.workload)
 			wlInfo.ClusterQueue = "test-cq"
