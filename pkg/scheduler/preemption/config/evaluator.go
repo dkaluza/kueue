@@ -73,35 +73,39 @@ func (p *preemptionEvaluator) Iter(snapshot *schdcache.Snapshot, preemptor *work
 }
 
 func (p *preemptionEvaluator) findCandidates(snapshot *schdcache.Snapshot, preemptor *workload.Info, flavorsNeedPreemption sets.Set[resources.FlavorResource]) ([]*workload.Info, error) {
-	activeRules := []v1beta2.PreemptionRule{}
+	candidateFilters := []filters.CandidateFilters{}
 	for _, rule := range p.config.Spec.Rules {
 		isActive, err := p.isActiveTrigger(rule, preemptor)
 		if err != nil {
 			return nil, err
 		}
 
-		if isActive {
-			activeRules = append(activeRules, rule)
+		if !isActive {
+			continue
+		}
+
+		for _, selector := range rule.Candidates {
+			candidateFilters = append(candidateFilters, p.candidateFilters(p.log, &selector, preemptor, snapshot))
 		}
 	}
 
-	candidateSet := sets.New[*workload.Info]()
-	for _, rule := range activeRules {
-		for _, selector := range rule.Candidates {
-			filter := p.candidateFilters(p.log, &selector, preemptor, snapshot)
+	if len(candidateFilters) == 0 {
+		return nil, nil
+	}
 
-			for _, targetCq := range snapshot.ClusterQueues() {
-				if !matchesClusterQueue(&filter, targetCq) {
+	candidateSet := sets.New[*workload.Info]()
+	for _, targetCq := range snapshot.ClusterQueues() {
+		for _, filter := range candidateFilters {
+			if !matchesClusterQueue(&filter, targetCq) {
+				continue
+			}
+
+			for _, wlInfo := range targetCq.Workloads {
+				if !matchesWorkload(&filter, wlInfo) || !classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
 					continue
 				}
 
-				for _, wlInfo := range targetCq.Workloads {
-					if !matchesWorkload(&filter, wlInfo) || !classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
-						continue
-					}
-
-					candidateSet.Insert(wlInfo)
-				}
+				candidateSet.Insert(wlInfo)
 			}
 		}
 	}
