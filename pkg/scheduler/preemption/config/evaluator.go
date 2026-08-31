@@ -101,11 +101,9 @@ func (p *preemptionEvaluator) findCandidates(snapshot *schdcache.Snapshot, preem
 			}
 
 			for _, wlInfo := range targetCq.Workloads {
-				if !matchesWorkload(&filter, wlInfo) || !classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
-					continue
+				if matchesWorkload(&filter, wlInfo) && classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
+					candidateSet.Insert(wlInfo)
 				}
-
-				candidateSet.Insert(wlInfo)
 			}
 		}
 	}
