@@ -104,6 +104,7 @@ func NewKueuePopulatorReconciler(
 // +kubebuilder:rbac:groups="events.k8s.io",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=clusterqueues,verbs=get;list;watch
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=localqueues,verbs=get;list;watch;create
+// +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=preemptionconfigs,verbs=get;list;watch
 
 func (r *KueuePopulatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)

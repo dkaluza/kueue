@@ -55,14 +55,15 @@ var (
 // clusterQueue is the internal implementation of kueue.clusterQueue that
 // holds admitted workloads.
 type clusterQueue struct {
-	Name              kueue.ClusterQueueReference
-	ResourceGroups    []resourcegroups.ResourceGroup
-	Workloads         map[workload.Reference]*workload.Info
-	WorkloadsNotReady sets.Set[workload.Reference]
-	NamespaceSelector labels.Selector
-	Preemption        kueue.ClusterQueuePreemption
-	FairWeight        float64
-	FlavorFungibility kueue.FlavorFungibility
+	Name                 kueue.ClusterQueueReference
+	ResourceGroups       []resourcegroups.ResourceGroup
+	Workloads            map[workload.Reference]*workload.Info
+	WorkloadsNotReady    sets.Set[workload.Reference]
+	NamespaceSelector    labels.Selector
+	Preemption           kueue.ClusterQueuePreemption
+	PreemptionConfigName *kueue.PreemptionConfigReference
+	FairWeight           float64
+	FlavorFungibility    kueue.FlavorFungibility
 	// Aggregates AdmissionChecks from both .spec.AdmissionChecks and .spec.AdmissionCheckStrategy
 	// Sets hold ResourceFlavors to which an AdmissionCheck should apply.
 	AdmissionChecks workload.AdmissionChecks
@@ -180,6 +181,8 @@ func (c *clusterQueue) updateClusterQueue(
 	c.isStopped = ptr.Deref(in.Spec.StopPolicy, kueue.None) != kueue.None
 
 	c.AdmissionChecks = admissioncheck.NewAdmissionChecks(in)
+
+	c.PreemptionConfigName = in.Spec.PreemptionConfigName
 
 	if in.Spec.Preemption != nil {
 		c.Preemption = *in.Spec.Preemption

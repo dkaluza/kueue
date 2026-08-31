@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	config "sigs.k8s.io/kueue/apis/config/v1beta2"
+	"sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/controller/constants"
@@ -46,6 +47,8 @@ import (
 	"sigs.k8s.io/kueue/pkg/scheduler/flavorassigner"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/classical"
 	preemptioncommon "sigs.k8s.io/kueue/pkg/scheduler/preemption/common"
+	configurable "sigs.k8s.io/kueue/pkg/scheduler/preemption/config"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/filters"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/fairsharing"
 	"sigs.k8s.io/kueue/pkg/util/expectations"
 	"sigs.k8s.io/kueue/pkg/util/logging"
@@ -156,6 +159,11 @@ func (p *Preemptor) GetTargets(ctx context.Context, wl workload.Info, assignment
 func (p *Preemptor) getTargets(preemptionCtx *preemptionCtx) []*Target {
 	if p.enableFairSharing {
 		return p.fairPreemptions(preemptionCtx, p.fsStrategies)
+	}
+	if features.Enabled(features.ConfigurablePreemption) {
+		if preemptionCtx.preemptorCQ.PreemptionConfigName != nil {
+			return p.configurablePreemptions(preemptionCtx)
+		}
 	}
 	return p.classicalPreemptions(preemptionCtx)
 }
@@ -617,6 +625,41 @@ func cqIsBorrowing(cq *schdcache.ClusterQueueSnapshot, frsNeedPreemption sets.Se
 		}
 	}
 	return false
+}
+
+func (p *Preemptor) configurablePreemptions(preemptionCtx *preemptionCtx) []*Target {
+	preemptionConfig := &v1beta2.PreemptionConfig{}
+	preemptionConfigName := string(*preemptionCtx.preemptorCQ.PreemptionConfigName)
+	if err := p.client.Get(preemptionCtx.ctx, client.ObjectKey{Name: preemptionConfigName}, preemptionConfig); err != nil {
+		preemptionCtx.log.Error(err, "Failed to get PreemptionConfig", "preemptionConfigName", preemptionConfigName)
+		return nil
+	}
+
+	preemptionEvaluator := configurable.NewPreemptionEvaluator(preemptionCtx.log, preemptionCtx.clock, *preemptionConfig, filters.NewCandidateFilters)
+
+	iter, err := preemptionEvaluator.Iter(preemptionCtx.snapshot, &preemptionCtx.preemptor, preemptionCtx.frsNeedPreemption)
+	if err != nil {
+		preemptionCtx.log.Error(err, "Failed to get candidates for preemption", "preemptionConfigName", preemptionConfigName)
+		return nil
+	}
+
+	var targets []*Target
+	for candidate := range iter {
+		preemptionCtx.snapshot.RemoveWorkload(candidate)
+		targets = append(targets, &Target{
+			WorkloadInfo: candidate,
+			Reason:       "",
+			WorkloadCq:   preemptionCtx.snapshot.ClusterQueue(candidate.ClusterQueue),
+		})
+
+		if workloadFits(preemptionCtx, true) {
+			restoreSnapshot(preemptionCtx.snapshot, targets)
+			return targets
+		}
+	}
+
+	restoreSnapshot(preemptionCtx.snapshot, targets)
+	return nil
 }
 
 // workloadFits determines if the workload requests would fit given the

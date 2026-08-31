@@ -57,6 +57,7 @@ type ClusterQueueSnapshot struct {
 	WorkloadsNotReady         sets.Set[workload.Reference]
 	NamespaceSelector         labels.Selector
 	Preemption                kueue.ClusterQueuePreemption
+	PreemptionConfigName      *kueue.PreemptionConfigReference
 	FairWeight                float64
 	FlavorFungibility         kueue.FlavorFungibility
 	AdmissionScope            kueue.AdmissionScope
