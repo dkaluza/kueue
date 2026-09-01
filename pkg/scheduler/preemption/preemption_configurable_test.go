@@ -177,6 +177,60 @@ func TestConfigurablePreemptions(t *testing.T) {
 			targetCQ:      "a",
 			wantPreempted: sets.New[string](),
 		},
+		"returns no candidates when requested config not found by name": {
+			clusterQueues: []*kueue.ClusterQueue{
+				utiltestingapi.MakeClusterQueue("a").
+					Cohort("all").
+					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
+						Resource(corev1.ResourceCPU, "2").Obj()).
+					PreemptionConfigName("unknown-name").
+					Obj(),
+			},
+			config: baseConfig,
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			incoming:      unitWl.Clone().Name("a_incoming").Condition(insufficientQuotaCond).Obj(),
+			targetCQ:      "a",
+			wantPreempted: sets.New[string](),
+		},
+		"returns no candidates when requested config has incorrect parameters": {
+			clusterQueues: baseCQs,
+			config: kueue.PreemptionConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: defaultConfigName,
+				},
+				Spec: kueue.PreemptionConfigSpec{
+					Rules: []kueue.PreemptionRule{
+						{
+							Name:    "test-rule-one",
+							Trigger: kueue.InsufficientQuota,
+							MatchingPreemptorWorkloads: metav1.LabelSelector{
+								MatchExpressions: []metav1.LabelSelectorRequirement{
+									{
+										Key:      "test",
+										Operator: "invalid",
+									},
+								},
+							},
+							Candidates: []kueue.PreemptionCandidateSelector{
+								{
+									RelationRequirement: kueue.SameClusterQueue,
+								},
+							},
+						},
+					},
+				},
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			incoming:      unitWl.Clone().Name("a_incoming").Condition(insufficientQuotaCond).Obj(),
+			targetCQ:      "a",
+			wantPreempted: sets.New[string](),
+		},
 	}
 
 	for name, tc := range cases {

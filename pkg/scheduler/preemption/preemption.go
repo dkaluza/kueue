@@ -157,13 +157,15 @@ func (p *Preemptor) GetTargets(ctx context.Context, wl workload.Info, assignment
 }
 
 func (p *Preemptor) getTargets(preemptionCtx *preemptionCtx) []*Target {
-	if p.enableFairSharing {
-		return p.fairPreemptions(preemptionCtx, p.fsStrategies)
-	}
+	// Configurable preemptions handled first to allow smooth fallback
+	// to previous algorithms when the feature is disabled.
 	if features.Enabled(features.ConfigurablePreemption) {
 		if preemptionCtx.preemptorCQ.PreemptionConfigName != nil {
 			return p.configurablePreemptions(preemptionCtx)
 		}
+	}
+	if p.enableFairSharing {
+		return p.fairPreemptions(preemptionCtx, p.fsStrategies)
 	}
 	return p.classicalPreemptions(preemptionCtx)
 }
