@@ -650,8 +650,9 @@ func (p *Preemptor) configurablePreemptions(preemptionCtx *preemptionCtx) []*Tar
 		preemptionCtx.snapshot.RemoveWorkload(candidate)
 		targets = append(targets, &Target{
 			WorkloadInfo: candidate,
-			Reason:       "",
-			WorkloadCq:   preemptionCtx.snapshot.ClusterQueue(candidate.ClusterQueue),
+			// configurable_preemptions_test.go should be updated once reason is changed.
+			Reason:     "ConfigurablePreemption",
+			WorkloadCq: preemptionCtx.snapshot.ClusterQueue(candidate.ClusterQueue),
 		})
 
 		if workloadFits(preemptionCtx, true) {
