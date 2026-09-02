@@ -113,7 +113,7 @@ var _ = ginkgo.Describe("Configuration Preemptions", ginkgo.Label("feature:confi
 	})
 
 	ginkgo.When("Configurable preemption enabled", func() {
-		ginkgo.It("Should preempt in the same CQ with lower priority", func() {
+		ginkgo.It("Should preempt in the same LQ with lower priority", func() {
 			ginkgo.By("Create jobs for admission")
 			lowPriorityJob := jobtesting.MakeJob("low-priority-job", ns.Name).
 				Queue(kueue.LocalQueueName(lq.Name)).
@@ -161,9 +161,9 @@ var _ = ginkgo.Describe("Configuration Preemptions", ginkgo.Label("feature:confi
 				g.Expect(lowPriorityJob.Spec.Suspend).Should(gomega.Equal(new(true)))
 
 				wlLookupKey := types.NamespacedName{Name: workloadjob.GetWorkloadNameForJob(lowPriorityJob.Name, lowPriorityJob.UID), Namespace: ns.Name}
-				createdWorkload := &kueue.Workload{}
-				g.Expect(k8sClient.Get(ctx, wlLookupKey, createdWorkload)).Should(gomega.Succeed())
-				g.Expect(createdWorkload.Status.Conditions).Should(gomega.ContainElement(gomega.BeComparableTo(
+				lowPriorityWorkload := &kueue.Workload{}
+				g.Expect(k8sClient.Get(ctx, wlLookupKey, lowPriorityWorkload)).Should(gomega.Succeed())
+				g.Expect(lowPriorityWorkload.Status.Conditions).Should(gomega.ContainElement(gomega.BeComparableTo(
 					metav1.Condition{
 						Type:   kueue.WorkloadPreempted,
 						Status: metav1.ConditionTrue,
