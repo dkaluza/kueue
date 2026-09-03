@@ -40,6 +40,7 @@ import (
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
+	"sigs.k8s.io/kueue/pkg/config"
 	"sigs.k8s.io/kueue/pkg/constants"
 	"sigs.k8s.io/kueue/pkg/controller/core"
 	"sigs.k8s.io/kueue/pkg/controller/core/indexer"
@@ -56,7 +57,8 @@ var (
 
 	metricsPort = flag.Int("metricsPort", 0, "metrics serving port")
 
-	enableTAS = flag.Bool("enableTAS", false, "enable TAS controllers and indexers")
+	enableTAS    = flag.Bool("enableTAS", false, "enable TAS controllers and indexers")
+	featureGates = flag.String("featureGates", "", "A set of key=value pairs that describe feature gates for alpha/experimental features.")
 )
 
 var (
@@ -85,11 +87,18 @@ var logOptions = zap.Options{
 
 func initFlags() {
 	logOptions.BindFlags(flag.CommandLine)
+	flag.StringVar(featureGates, "feature-gates", *featureGates, "A set of key=value pairs that describe feature gates for alpha/experimental features.")
 }
 
 func run() int {
 	log := zap.New(zap.UseFlagOptions(&logOptions))
 	ctrl.SetLogger(log)
+	if *featureGates != "" {
+		if err := config.LoadAndValidateFeatureGates(*featureGates, nil).ToAggregate(); err != nil {
+			log.Error(err, "conflicting feature gates detected")
+			return 1
+		}
+	}
 	if *enableTAS {
 		log.Info("Start minimalkueue with TAS support")
 	} else {

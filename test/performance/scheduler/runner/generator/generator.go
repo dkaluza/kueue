@@ -25,6 +25,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -54,17 +55,19 @@ type WorkloadTemplate struct {
 type WorkloadsSet struct {
 	Count              int                `json:"count"`
 	CreationIntervalMs uint               `json:"creationIntervalMs"`
+	InitialDelayMs     uint               `json:"initialDelayMs,omitempty"`
 	Workloads          []WorkloadTemplate `json:"workloads"`
 }
 
 type QueuesSet struct {
-	ClassName           string                 `json:"className"`
-	Count               int                    `json:"count"`
-	NominalQuota        string                 `json:"nominalQuota"`
-	BorrowingLimit      string                 `json:"borrowingLimit"`
-	ReclaimWithinCohort kueue.PreemptionPolicy `json:"reclaimWithinCohort"`
-	WithinClusterQueue  kueue.PreemptionPolicy `json:"withinClusterQueue"`
-	WorkloadsSets       []WorkloadsSet         `json:"workloadsSets"`
+	ClassName           string                      `json:"className"`
+	Count               int                         `json:"count"`
+	NominalQuota        string                      `json:"nominalQuota"`
+	BorrowingLimit      string                      `json:"borrowingLimit"`
+	ReclaimWithinCohort kueue.PreemptionPolicy      `json:"reclaimWithinCohort"`
+	WithinClusterQueue  kueue.PreemptionPolicy      `json:"withinClusterQueue"`
+	PreemptionConfig    *kueue.PreemptionConfigSpec `json:"preemptionConfig,omitempty"`
+	WorkloadsSets       []WorkloadsSet              `json:"workloadsSets"`
 }
 
 type CohortSet struct {
@@ -132,6 +135,9 @@ func concurrent[T any](set T, count func(T) int, call func(int) error) error {
 }
 
 func generateWlSet(ctx context.Context, c client.Client, wlSet WorkloadsSet, namespace string, localQueue kueue.LocalQueueName, wlSetIdx int) error {
+	if wlSet.InitialDelayMs > 0 {
+		<-time.After(time.Duration(wlSet.InitialDelayMs) * time.Millisecond)
+	}
 	delay := time.Duration(wlSet.CreationIntervalMs) * time.Millisecond
 	log := ctrl.LoggerFrom(ctx).WithName("generate workload group").WithValues("namespace", namespace, "localQueue", localQueue, "delay", delay)
 	log.Info("Start generation")
@@ -194,17 +200,34 @@ func generateQueue(ctx context.Context, c client.Client, qSet QueuesSet, cohortN
 	log := ctrl.LoggerFrom(ctx).WithName("generate queue").WithValues("idx", queueIndex, "prefix", qSet.ClassName)
 	log.Info("Start generation")
 	defer log.Info("End generation")
-	cq := utiltestingapi.MakeClusterQueue(fmt.Sprintf("%s-%d-%d-%s", qSet.ClassName, queueSetIdx, queueIndex, cohortName)).
+	cqName := fmt.Sprintf("%s-%d-%d-%s", qSet.ClassName, queueSetIdx, queueIndex, cohortName)
+	cqWrapper := utiltestingapi.MakeClusterQueue(cqName).
 		Cohort(cohortName).
 		ResourceGroup(*utiltestingapi.MakeFlavorQuotas(flavorName).
 			Resource(corev1.ResourceCPU, qSet.NominalQuota, qSet.BorrowingLimit).Obj()).
-		Preemption(kueue.ClusterQueuePreemption{
+		Label(ClassLabel, qSet.ClassName).
+		Label(CleanupLabel, "true")
+
+	if qSet.PreemptionConfig != nil {
+		pcName := fmt.Sprintf("pc-%s", cqName)
+		pc := &kueue.PreemptionConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   pcName,
+				Labels: map[string]string{CleanupLabel: "true"},
+			},
+			Spec: *qSet.PreemptionConfig,
+		}
+		if err := c.Create(ctx, pc); err != nil {
+			return fmt.Errorf("creating preemption config %s: %w", pcName, err)
+		}
+		cqWrapper = cqWrapper.PreemptionConfigName(pcName)
+	} else {
+		cqWrapper = cqWrapper.Preemption(kueue.ClusterQueuePreemption{
 			ReclaimWithinCohort: qSet.ReclaimWithinCohort,
 			WithinClusterQueue:  qSet.WithinClusterQueue,
-		}).
-		Label(ClassLabel, qSet.ClassName).
-		Label(CleanupLabel, "true").
-		Obj()
+		})
+	}
+	cq := cqWrapper.Obj()
 	err := c.Create(ctx, cq)
 	if err != nil {
 		return err
@@ -317,5 +340,10 @@ func Cleanup(ctx context.Context, c client.Client) {
 
 	if err := c.DeleteAllOf(ctx, &corev1.Node{}, client.HasLabels{CleanupLabel}); err != nil {
 		log.Error(err, "Deleting nodes")
+	}
+
+	// Clean up PreemptionConfig resources if present
+	if err := c.DeleteAllOf(ctx, &kueue.PreemptionConfig{}, client.HasLabels{CleanupLabel}); err != nil {
+		log.Error(err, "Deleting preemption configs")
 	}
 }
