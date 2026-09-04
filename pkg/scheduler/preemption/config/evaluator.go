@@ -17,9 +17,9 @@ limitations under the License.
 package config
 
 import (
-	"cmp"
 	"context"
 	"iter"
+	"maps"
 	"slices"
 
 	"github.com/go-logr/logr"
@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/kueue/pkg/resources"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/classical"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/filters"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/ordering"
 	"sigs.k8s.io/kueue/pkg/workload"
 )
 
@@ -63,65 +64,66 @@ func NewPreemptionEvaluator(
 }
 
 func (p *preemptionEvaluator) Iter(snapshot *schdcache.Snapshot, preemptor *workload.Info, flavorsNeedPreemption sets.Set[resources.FlavorResource]) (iter.Seq[*workload.Info], error) {
-	candidates, err := p.findCandidates(snapshot, preemptor, flavorsNeedPreemption)
+	queues, cmpFunc, err := p.buildCandidateQueues(snapshot, preemptor, flavorsNeedPreemption)
 	if err != nil {
 		return nil, err
 	}
+	if len(queues) == 0 {
+		return func(yield func(*workload.Info) bool) {}, nil
+	}
 
-	slices.SortFunc(candidates, func(a, b *workload.Info) int {
-		return cmp.Compare(a.Obj.UID, b.Obj.UID)
-	})
-
-	return func(yield func(*workload.Info) bool) {
-		for _, candidate := range candidates {
-			if !yield(candidate) {
-				return
-			}
-		}
-	}, nil
+	iterator := ordering.NewMultiQueueCandidateIterator(queues, cmpFunc)
+	return iterator.Seq(), nil
 }
 
-func (p *preemptionEvaluator) findCandidates(snapshot *schdcache.Snapshot, preemptor *workload.Info, flavorsNeedPreemption sets.Set[resources.FlavorResource]) ([]*workload.Info, error) {
-	candidateFilters := []filters.CandidateFilters{}
+func (p *preemptionEvaluator) buildCandidateQueues(
+	snapshot *schdcache.Snapshot,
+	preemptor *workload.Info,
+	flavorsNeedPreemption sets.Set[resources.FlavorResource],
+) ([]*ordering.CandidateQueue, func(a, b *workload.Info) int, error) {
+	cmpFunc := ordering.NewComparator(p.log, p.config.Spec.Ordering, preemptor, snapshot, p.clock.Now())
+	// Sorting CQ names ensures deterministic queue instantiation across scheduling cycles.
+	cqNames := slices.Sorted(maps.Keys(snapshot.ClusterQueues()))
+
+	var queues []*ordering.CandidateQueue
 	for _, rule := range p.config.Spec.Rules {
 		isActive, err := p.isActiveTrigger(rule, preemptor)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		if !isActive {
 			continue
 		}
 
-		for _, selector := range rule.Candidates {
+		for selectorIdx, selector := range rule.Candidates {
 			filter, rejectAll := filters.NewCandidateFilters(p.ctx, p.log, &selector, preemptor, snapshot, p.reader)
 			if rejectAll {
 				continue
 			}
-			candidateFilters = append(candidateFilters, filter)
-		}
-	}
 
-	if len(candidateFilters) == 0 {
-		return nil, nil
-	}
+			for _, cqName := range cqNames {
+				targetCq := snapshot.ClusterQueue(cqName)
+				if !matchesClusterQueue(&filter, targetCq) {
+					continue
+				}
 
-	candidateSet := sets.New[*workload.Info]()
-	for _, targetCq := range snapshot.ClusterQueues() {
-		for _, filter := range candidateFilters {
-			if !matchesClusterQueue(&filter, targetCq) {
-				continue
-			}
+				var candidates []*workload.Info
+				for _, wlInfo := range targetCq.Workloads {
+					if matchesWorkload(&filter, wlInfo) && classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
+						candidates = append(candidates, wlInfo)
+					}
+				}
 
-			for _, wlInfo := range targetCq.Workloads {
-				if matchesWorkload(&filter, wlInfo) && classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
-					candidateSet.Insert(wlInfo)
+				if len(candidates) > 0 {
+					q := ordering.NewCandidateQueue(rule.Name, selectorIdx, targetCq.Name, candidates, cmpFunc)
+					queues = append(queues, q)
 				}
 			}
 		}
 	}
 
-	return candidateSet.UnsortedList(), nil
+	return queues, cmpFunc, nil
 }
 
 func matchesClusterQueue(filter *filters.CandidateFilters, cq *schdcache.ClusterQueueSnapshot) bool {

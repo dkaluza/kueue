@@ -18,20 +18,18 @@ limitations under the License.
 
 package v1beta2
 
-import (
-	kueuev1beta2 "sigs.k8s.io/kueue/apis/kueue/v1beta2"
-)
-
 // PreemptionConfigSpecApplyConfiguration represents a declarative configuration of the PreemptionConfigSpec type for use
 // with apply.
 type PreemptionConfigSpecApplyConfiguration struct {
 	// Rules to select preemption candidates.
 	Rules []PreemptionRuleApplyConfiguration `json:"rules,omitempty"`
-	// Ordering of the preemption candidates.
-	// The order will be always deterministic, as UID
-	// of the workloads is used to break the ties
-	// If not set workloads will be just ordered by UID.
-	Ordering []kueuev1beta2.OrderingField `json:"ordering,omitempty"`
+	// Ordering of preemption candidates evaluated sequentially as a multi-key comparator chain.
+	// The order is always deterministic, as the Workload UID is used as the final tie-breaker.
+	// If not set, candidates will be ordered by default like this:
+	// 1. Priority (Ascending: lowest priority first)
+	// 2. AdmissionTimestamp (Descending: most recently admitted first, protecting long-running workloads)
+	// 3. UID (Ascending: deterministic tie-breaker)
+	Ordering []OrderApplyConfiguration `json:"ordering,omitempty"`
 }
 
 // PreemptionConfigSpecApplyConfiguration constructs a declarative configuration of the PreemptionConfigSpec type for use with
@@ -56,9 +54,12 @@ func (b *PreemptionConfigSpecApplyConfiguration) WithRules(values ...*Preemption
 // WithOrdering adds the given value to the Ordering field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the Ordering field.
-func (b *PreemptionConfigSpecApplyConfiguration) WithOrdering(values ...kueuev1beta2.OrderingField) *PreemptionConfigSpecApplyConfiguration {
+func (b *PreemptionConfigSpecApplyConfiguration) WithOrdering(values ...*OrderApplyConfiguration) *PreemptionConfigSpecApplyConfiguration {
 	for i := range values {
-		b.Ordering = append(b.Ordering, values[i])
+		if values[i] == nil {
+			panic("nil value passed to WithOrdering")
+		}
+		b.Ordering = append(b.Ordering, *values[i])
 	}
 	return b
 }

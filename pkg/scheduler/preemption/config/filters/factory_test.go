@@ -27,6 +27,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
+	configtesting "sigs.k8s.io/kueue/pkg/scheduler/preemption/config/testing"
 	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
 	utiltestingapi "sigs.k8s.io/kueue/pkg/util/testing/v1beta2"
 	"sigs.k8s.io/kueue/pkg/workload"
@@ -41,7 +42,7 @@ func makeWorkloadInfo(w *kueue.Workload, cq kueue.ClusterQueueReference) *worklo
 func TestNewCandidateFilters(t *testing.T) {
 	// Minimal snapshot required by constructor for resolving preemptor's cohort ancestors:
 	// rootA -> subA1 -> cq1
-	snapshot := newSnapshotBuilder().
+	snapshot := configtesting.NewSnapshotBuilder().
 		Cohort("rootA", "").
 		Cohort("subA1", "rootA").
 		ClusterQueue("cq1", "subA1").

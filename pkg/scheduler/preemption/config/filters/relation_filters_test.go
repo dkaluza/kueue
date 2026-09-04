@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
+	configtesting "sigs.k8s.io/kueue/pkg/scheduler/preemption/config/testing"
 	utiltestingapi "sigs.k8s.io/kueue/pkg/util/testing/v1beta2"
 	"sigs.k8s.io/kueue/pkg/workload"
 )
@@ -37,7 +38,7 @@ func TestClusterQueueRelationFilters(t *testing.T) {
 	// Standalone CQs (no cohort):
 	// - cqStandalone1
 	// - cqStandalone2
-	snapshot := newSnapshotBuilder().
+	snapshot := configtesting.NewSnapshotBuilder().
 		Cohort("rootA", "").
 		Cohort("subA1", "rootA").
 		Cohort("subSubA", "subA1").

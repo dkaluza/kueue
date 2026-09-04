@@ -258,6 +258,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &kueuev1beta2.MultiKueueConfigSpecApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("NumericLabelConstraint"):
 		return &kueuev1beta2.NumericLabelConstraintApplyConfiguration{}
+	case v1beta2.SchemeGroupVersion.WithKind("Order"):
+		return &kueuev1beta2.OrderApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("PodSet"):
 		return &kueuev1beta2.PodSetApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("PodSetAssignment"):

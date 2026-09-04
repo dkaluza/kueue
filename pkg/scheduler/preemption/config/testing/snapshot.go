@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package filters
+package testing
 
 import (
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
@@ -22,12 +22,14 @@ import (
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 )
 
-type snapshotBuilder struct {
+// SnapshotBuilder provides a fluent API for building scheduler cache snapshots with cohort and cluster queue hierarchies in tests.
+type SnapshotBuilder struct {
 	mgr hierarchy.Manager[*schdcache.ClusterQueueSnapshot, *schdcache.CohortSnapshot]
 }
 
-func newSnapshotBuilder() *snapshotBuilder {
-	return &snapshotBuilder{
+// NewSnapshotBuilder initializes an empty SnapshotBuilder.
+func NewSnapshotBuilder() *SnapshotBuilder {
+	return &SnapshotBuilder{
 		mgr: hierarchy.NewManager(func(name kueue.CohortReference) *schdcache.CohortSnapshot {
 			return &schdcache.CohortSnapshot{
 				Name:   name,
@@ -37,7 +39,8 @@ func newSnapshotBuilder() *snapshotBuilder {
 	}
 }
 
-func (b *snapshotBuilder) Cohort(name, parent kueue.CohortReference) *snapshotBuilder {
+// Cohort adds a Cohort to the snapshot hierarchy, optionally linking it to a parent Cohort.
+func (b *SnapshotBuilder) Cohort(name, parent kueue.CohortReference) *SnapshotBuilder {
 	b.mgr.AddCohort(name)
 	if parent != "" {
 		b.mgr.UpdateCohortEdge(name, parent)
@@ -45,7 +48,8 @@ func (b *snapshotBuilder) Cohort(name, parent kueue.CohortReference) *snapshotBu
 	return b
 }
 
-func (b *snapshotBuilder) ClusterQueue(name kueue.ClusterQueueReference, parent kueue.CohortReference) *snapshotBuilder {
+// ClusterQueue adds a ClusterQueueSnapshot to the snapshot hierarchy, optionally linking it to a parent Cohort.
+func (b *SnapshotBuilder) ClusterQueue(name kueue.ClusterQueueReference, parent kueue.CohortReference) *SnapshotBuilder {
 	b.mgr.AddClusterQueue(&schdcache.ClusterQueueSnapshot{Name: name})
 	if parent != "" {
 		b.mgr.UpdateClusterQueueEdge(name, parent)
@@ -53,7 +57,8 @@ func (b *snapshotBuilder) ClusterQueue(name kueue.ClusterQueueReference, parent 
 	return b
 }
 
-func (b *snapshotBuilder) Build() *schdcache.Snapshot {
+// Build creates and returns the configured scheduler cache Snapshot.
+func (b *SnapshotBuilder) Build() *schdcache.Snapshot {
 	return &schdcache.Snapshot{
 		Manager: b.mgr,
 	}

@@ -41,12 +41,39 @@ spec:
             properties:
               ordering:
                 description: |-
-                  Ordering of the preemption candidates.
-                  The order will be always deterministic, as UID
-                  of the workloads is used to break the ties
-                  If not set workloads will be just ordered by UID.
+                  Ordering of preemption candidates evaluated sequentially as a multi-key comparator chain.
+                  The order is always deterministic, as the Workload UID is used as the final tie-breaker.
+                  If not set, candidates will be ordered by default like this:
+                  1. Priority (Ascending: lowest priority first)
+                  2. AdmissionTimestamp (Descending: most recently admitted first, protecting long-running workloads)
+                  3. UID (Ascending: deterministic tie-breaker)
                 items:
-                  type: string
+                  description: |-
+                    Order specifies a single sorting criterion and direction for ordering preemption candidates.
+                    Multiple Order criteria are evaluated sequentially as a multi-key comparator chain,
+                    with ties broken by Workload UID for deterministic ordering.
+                  properties:
+                    direction:
+                      default: Ascending
+                      description: |-
+                        Direction specifies the sorting direction (Ascending or Descending).
+                        Defaults to Ascending if not specified.
+                      enum:
+                      - Ascending
+                      - Descending
+                      type: string
+                    orderingField:
+                      description: OrderingField specifies the field to sort preemption
+                        candidates by.
+                      enum:
+                      - Priority
+                      - AdmissionTimestamp
+                      - IsOtherCQ
+                      - IsOtherCohort
+                      type: string
+                  required:
+                  - orderingField
+                  type: object
                 type: array
               rules:
                 description: Rules to select preemption candidates.
