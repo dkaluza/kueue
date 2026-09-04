@@ -135,3 +135,72 @@ cohorts:
 ```
 
 Performance thresholds are defined in `configs/tas/rangespec.yaml`.
+
+## Preemption Tests
+
+The performance test framework supports preemption performance benchmarking using the same infrastructure. Preemption scenarios measure scheduling latency, throughput, and eviction performance when high-priority workloads preempt lower-priority workloads.
+
+### Run Preemption tests
+
+```bash
+# Run with minimalkueue in envtest
+make run-preemption-performance-scheduler
+
+# Run and validate against thresholds
+make test-preemption-performance-scheduler
+```
+
+Results are stored in `$(PROJECT_DIR)/artifacts/run-preemption-performance-scheduler/`.
+
+### Preemption configuration
+
+Preemption config (`configs/preemption/generator.yaml`) defines queues with preemption policies and staggered workload sets using `initialDelayMs`:
+
+```yaml
+cohorts:
+  - className: cohort
+    count: 1
+    queuesSets:
+    - className: cq
+      count: 1
+      nominalQuota: 10
+      reclaimWithinCohort: Any
+      withinClusterQueue: LowerPriority
+      workloadsSets:
+      - count: 10
+        creationIntervalMs: 50
+        workloads:
+        - className: low-prio
+          runtimeMs: 10000
+          priority: 10
+          request: 1
+      - count: 5
+        initialDelayMs: 2000
+        creationIntervalMs: 100
+        workloads:
+        - className: high-prio
+          runtimeMs: 2000
+          priority: 100
+          request: 1
+```
+
+Performance thresholds and minimum eviction assertions are defined in `configs/preemption/rangespec.yaml`.
+
+### Comparing Classical and Configurable Preemption
+
+A key objective of this suite is comparing the performance and latency profile of **Classical Preemption** against the **Configurable Preemption** model:
+
+- **Classical Preemption** (`configs/preemption/`): Evaluates preemption using static `withinClusterQueue` and `reclaimWithinCohort` policies defined directly on the ClusterQueue.
+- **Configurable Preemption** (`configs/configurable-preemption/`): Uses dynamic `PreemptionConfig` custom resources with declarative triggers and candidate filtering rules under the `ConfigurablePreemption` feature gate.
+
+By executing both scenarios with identical queue quotas, arrival delays, and workload sizes, you can directly measure any latency, CPU, or memory overhead introduced by configurable preemption evaluation:
+
+```bash
+# Benchmark classical preemption
+make test-preemption-performance-scheduler
+
+# Benchmark configurable preemption
+make test-configurable-preemption-performance-scheduler
+```
+
+Output metrics in `artifacts/run-preemption-performance-scheduler/` and `artifacts/run-configurable-preemption-performance-scheduler/` can be compared side-by-side for wall clock time, RSS memory, scheduling throughput, and average admission latency.
