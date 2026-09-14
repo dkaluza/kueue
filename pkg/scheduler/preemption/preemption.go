@@ -155,17 +155,38 @@ func (p *Preemptor) GetTargets(ctx context.Context, wl workload.Info, assignment
 }
 
 func (p *Preemptor) getTargets(preemptionCtx *preemptionCtx) []*Target {
-	// Configurable preemptions handled first to allow smooth fallback
-	// to previous algorithms when the feature is disabled.
+	var targets []*Target
+	if p.enableFairSharing {
+		targets = p.fairPreemptions(preemptionCtx, p.fsStrategies)
+	} else {
+		targets = p.classicalPreemptions(preemptionCtx)
+	}
+
 	if features.Enabled(features.ConfigurablePreemption) {
 		if preemptionCtx.preemptorCQ.PreemptionConfigName != nil {
-			return p.configurablePreemptions(preemptionCtx)
+			targetsSet := sets.New[workload.Reference]()
+			for _, target := range targets {
+				targetsSet.Insert(workload.Key(target.WorkloadInfo.Obj))
+			}
+			configurableTargets := p.configurablePreemptions(preemptionCtx)
+
+			fmt.Println("=== CONFIGURABLE TARGETS ===", len(configurableTargets))
+			for _, configurableTarget := range configurableTargets {
+				fmt.Println("=== CONFIGURABLE TARGET ===", configurableTarget.WorkloadInfo.Obj.Name)
+				fmt.Println("=== CONFIGURABLE TARGET ===", configurableTarget.WorkloadInfo.Obj.Namespace)
+			}
+
+			for _, configurableTarget := range configurableTargets {
+				key := workload.Key(configurableTarget.WorkloadInfo.Obj)
+				if !targetsSet.Has(key) {
+					targetsSet.Insert(key)
+					targets = append(targets, configurableTarget)
+				}
+			}
 		}
 	}
-	if p.enableFairSharing {
-		return p.fairPreemptions(preemptionCtx, p.fsStrategies)
-	}
-	return p.classicalPreemptions(preemptionCtx)
+
+	return targets
 }
 
 var HumanReadablePreemptionReasons = map[string]string{
