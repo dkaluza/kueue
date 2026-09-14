@@ -169,13 +169,6 @@ func (p *Preemptor) getTargets(preemptionCtx *preemptionCtx) []*Target {
 				targetsSet.Insert(workload.Key(target.WorkloadInfo.Obj))
 			}
 			configurableTargets := p.configurablePreemptions(preemptionCtx)
-
-			fmt.Println("=== CONFIGURABLE TARGETS ===", len(configurableTargets))
-			for _, configurableTarget := range configurableTargets {
-				fmt.Println("=== CONFIGURABLE TARGET ===", configurableTarget.WorkloadInfo.Obj.Name)
-				fmt.Println("=== CONFIGURABLE TARGET ===", configurableTarget.WorkloadInfo.Obj.Namespace)
-			}
-
 			for _, configurableTarget := range configurableTargets {
 				key := workload.Key(configurableTarget.WorkloadInfo.Obj)
 				if !targetsSet.Has(key) {
