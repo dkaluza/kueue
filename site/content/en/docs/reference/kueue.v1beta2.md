@@ -2152,14 +2152,102 @@ If not specified, no upper bound is enforced.</p>
 </tbody>
 </table>
 
+## `Order`     {#kueue-x-k8s-io-v1beta2-Order}
+    
+
+**Appears in:**
+
+- [PreemptionConfigSpec](#kueue-x-k8s-io-v1beta2-PreemptionConfigSpec)
+
+
+<p>Order specifies a single sorting criterion and direction for ordering preemption candidates.
+Multiple Order criteria are evaluated sequentially as a multi-key comparator chain,
+with ties broken by Workload UID for deterministic ordering.</p>
+
+
+<table class="table">
+<thead><tr><th width="30%">Field</th><th>Description</th></tr></thead>
+<tbody>
+    
+  
+<tr><td><code>orderingField</code> <B>[Required]</B><br/>
+<a href="#kueue-x-k8s-io-v1beta2-OrderingField"><code>OrderingField</code></a>
+</td>
+<td>
+   <p>OrderingField specifies the field to sort preemption candidates by.</p>
+</td>
+</tr>
+<tr><td><code>direction</code><br/>
+<a href="#kueue-x-k8s-io-v1beta2-OrderingDirection"><code>OrderingDirection</code></a>
+</td>
+<td>
+   <p>Direction specifies the sorting direction (Ascending or Descending).
+Defaults to Ascending if not specified.</p>
+</td>
+</tr>
+</tbody>
+</table>
+
+## `OrderingDirection`     {#kueue-x-k8s-io-v1beta2-OrderingDirection}
+    
+(Alias of `string`)
+
+**Appears in:**
+
+- [Order](#kueue-x-k8s-io-v1beta2-Order)
+
+
+<p>OrderingDirection specifies the sort direction for a candidate ordering criterion.
+Possible values are:</p>
+<ul>
+<li>&quot;Ascending&quot;: sort in natural ascending order (default).</li>
+<li>&quot;Descending&quot;: sort in reverse/descending order.</li>
+</ul>
+
+
+
+
 ## `OrderingField`     {#kueue-x-k8s-io-v1beta2-OrderingField}
     
 (Alias of `string`)
 
 **Appears in:**
 
-- [PreemptionConfigSpec](#kueue-x-k8s-io-v1beta2-PreemptionConfigSpec)
+- [Order](#kueue-x-k8s-io-v1beta2-Order)
 
+
+<p>OrderingField specifies the property of candidate workloads to sort by during preemption evaluation.
+Supported values are:</p>
+<ul>
+<li>
+<p>&quot;Priority&quot;: orders workloads by effective priority (accounting for priority boost if enabled).</p>
+<ul>
+<li>Ascending (default): lowest priority first.</li>
+<li>Descending: highest priority first.</li>
+</ul>
+</li>
+<li>
+<p>&quot;AdmissionTimestamp&quot;: orders workloads by the timestamp when quota was reserved (admitted).</p>
+<ul>
+<li>Ascending (default): oldest admitted workloads first and most recently admitted last.</li>
+<li>Descending: most recently admitted workloads first and oldest admitted last.</li>
+</ul>
+</li>
+<li>
+<p>&quot;IsOtherCQ&quot;: orders workloads based on whether they belong to a different ClusterQueue than the preemptor.</p>
+<ul>
+<li>Ascending (default): workloads from the same ClusterQueue first, followed by other ClusterQueues.</li>
+<li>Descending: workloads from other ClusterQueues first, followed by the same ClusterQueue.</li>
+</ul>
+</li>
+<li>
+<p>&quot;IsOtherCohort&quot;: orders workloads based on whether they belong to a different Cohort than the preemptor.</p>
+<ul>
+<li>Ascending (default): workloads from the same Cohort first, followed by other Cohorts.</li>
+<li>Descending: workloads from other Cohorts first, followed by the same Cohort.</li>
+</ul>
+</li>
+</ul>
 
 
 
@@ -2806,14 +2894,18 @@ If nil, no relative priority check is enforced.</p>
    <p>Rules to select preemption candidates.</p>
 </td>
 </tr>
-<tr><td><code>ordering</code> <B>[Required]</B><br/>
-<a href="#kueue-x-k8s-io-v1beta2-OrderingField"><code>[]OrderingField</code></a>
+<tr><td><code>ordering</code><br/>
+<a href="#kueue-x-k8s-io-v1beta2-Order"><code>[]Order</code></a>
 </td>
 <td>
-   <p>Ordering of the preemption candidates.
-The order will be always deterministic, as UID
-of the workloads is used to break the ties
-If not set workloads will be just ordered by UID.</p>
+   <p>Ordering of preemption candidates evaluated sequentially as a multi-key comparator chain.
+The order is always deterministic, as the Workload UID is used as the final tie-breaker.
+If not set, candidates will be ordered by default like this:</p>
+<ol>
+<li>Priority (Ascending: lowest priority first)</li>
+<li>AdmissionTimestamp (Descending: most recently admitted first, protecting long-running workloads)</li>
+<li>UID (Ascending: deterministic tie-breaker)</li>
+</ol>
 </td>
 </tr>
 </tbody>
