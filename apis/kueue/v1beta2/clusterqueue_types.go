@@ -63,7 +63,7 @@ type ClusterQueueReference string
 type CohortReference string
 
 const (
-	AlphaPreemptionConfigAnnotation = "kueue.x-k8s.io/alpha-preemption-config"
+	AlphaPreemptionConfigAnnotation = "kueue.x-k8s.io/preemption-config"
 )
 
 // ClusterQueueSpec defines the desired state of ClusterQueue
@@ -125,6 +125,7 @@ type ClusterQueueSpec struct {
 	FlavorFungibility *FlavorFungibility `json:"flavorFungibility,omitempty"`
 
 	// preemption defines the preemption policies.
+	// +kubebuilder:default={}
 	// +optional
 	Preemption *ClusterQueuePreemption `json:"preemption,omitempty"`
 
