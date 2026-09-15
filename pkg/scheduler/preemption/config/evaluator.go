@@ -18,7 +18,6 @@ package config
 
 import (
 	"context"
-	"iter"
 	"maps"
 	"slices"
 
@@ -26,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,7 +35,6 @@ import (
 	"sigs.k8s.io/kueue/pkg/resources"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/classical"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/filters"
-	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/ordering"
 	"sigs.k8s.io/kueue/pkg/workload"
 )
 
@@ -63,40 +62,27 @@ func NewPreemptionEvaluator(
 	}
 }
 
-func (p *preemptionEvaluator) Iter(snapshot *schdcache.Snapshot, preemptor *workload.Info, flavorsNeedPreemption sets.Set[resources.FlavorResource]) (iter.Seq[*workload.Info], error) {
-	queues, cmpFunc, err := p.buildCandidateQueues(snapshot, preemptor, flavorsNeedPreemption)
-	if err != nil {
-		return nil, err
-	}
-	if len(queues) == 0 {
-		return func(yield func(*workload.Info) bool) {}, nil
-	}
-
-	iterator := ordering.NewMultiQueueCandidateIterator(queues, cmpFunc)
-	return iterator.Seq(), nil
-}
-
-func (p *preemptionEvaluator) buildCandidateQueues(
+func (p *preemptionEvaluator) Candidates(
 	snapshot *schdcache.Snapshot,
 	preemptor *workload.Info,
 	flavorsNeedPreemption sets.Set[resources.FlavorResource],
-) ([]*ordering.CandidateQueue, func(a, b *workload.Info) int, error) {
-	cmpFunc := ordering.NewComparator(p.log, p.config.Spec.Ordering, preemptor, snapshot, p.clock.Now())
-	// Sorting CQ names ensures deterministic queue instantiation across scheduling cycles.
+) ([]*workload.Info, error) {
+	// Sorting CQ names ensures deterministic candidate collection across scheduling cycles.
 	cqNames := slices.Sorted(maps.Keys(snapshot.ClusterQueues()))
 
-	var queues []*ordering.CandidateQueue
+	var candidates []*workload.Info
+	seen := sets.New[types.UID]()
 	for _, rule := range p.config.Spec.Rules {
 		isActive, err := p.isActiveTrigger(rule, preemptor)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
 		if !isActive {
 			continue
 		}
 
-		for selectorIdx, selector := range rule.Candidates {
+		for _, selector := range rule.Candidates {
 			filter, rejectAll := filters.NewCandidateFilters(p.ctx, p.log, &selector, preemptor, snapshot, p.reader)
 			if rejectAll {
 				continue
@@ -108,22 +94,24 @@ func (p *preemptionEvaluator) buildCandidateQueues(
 					continue
 				}
 
-				var candidates []*workload.Info
-				for _, wlInfo := range targetCq.Workloads {
-					if matchesWorkload(&filter, wlInfo) && classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
-						candidates = append(candidates, wlInfo)
+				// Sorting the workload keys ensures deterministic candidate collection
+				// across scheduling cycles. It carries no preemption ordering semantics.
+				for _, wlKey := range slices.Sorted(maps.Keys(targetCq.Workloads)) {
+					wlInfo := targetCq.Workloads[wlKey]
+					if !matchesWorkload(&filter, wlInfo) || !classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
+						continue
 					}
-				}
-
-				if len(candidates) > 0 {
-					q := ordering.NewCandidateQueue(rule.Name, selectorIdx, targetCq.Name, candidates, cmpFunc)
-					queues = append(queues, q)
+					if seen.Has(wlInfo.Obj.UID) {
+						continue
+					}
+					seen.Insert(wlInfo.Obj.UID)
+					candidates = append(candidates, wlInfo)
 				}
 			}
 		}
 	}
 
-	return queues, cmpFunc, nil
+	return candidates, nil
 }
 
 func matchesClusterQueue(filter *filters.CandidateFilters, cq *schdcache.ClusterQueueSnapshot) bool {

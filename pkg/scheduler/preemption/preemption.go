@@ -46,7 +46,6 @@ import (
 	"sigs.k8s.io/kueue/pkg/scheduler/flavorassigner"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/classical"
 	preemptioncommon "sigs.k8s.io/kueue/pkg/scheduler/preemption/common"
-	configurable "sigs.k8s.io/kueue/pkg/scheduler/preemption/config"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/fairsharing"
 	"sigs.k8s.io/kueue/pkg/util/expectations"
 	"sigs.k8s.io/kueue/pkg/util/logging"
@@ -155,31 +154,10 @@ func (p *Preemptor) GetTargets(ctx context.Context, wl workload.Info, assignment
 }
 
 func (p *Preemptor) getTargets(preemptionCtx *preemptionCtx) []*Target {
-	var targets []*Target
 	if p.enableFairSharing {
-		targets = p.fairPreemptions(preemptionCtx, p.fsStrategies)
-	} else {
-		targets = p.classicalPreemptions(preemptionCtx)
+		return p.fairPreemptions(preemptionCtx, p.fsStrategies)
 	}
-
-	if features.Enabled(features.ConfigurablePreemption) {
-		if preemptionCtx.preemptorCQ.PreemptionAnnotation != nil {
-			targetsSet := sets.New[workload.Reference]()
-			for _, target := range targets {
-				targetsSet.Insert(workload.Key(target.WorkloadInfo.Obj))
-			}
-			configurableTargets := p.configurablePreemptions(preemptionCtx)
-			for _, configurableTarget := range configurableTargets {
-				key := workload.Key(configurableTarget.WorkloadInfo.Obj)
-				if !targetsSet.Has(key) {
-					targetsSet.Insert(key)
-					targets = append(targets, configurableTarget)
-				}
-			}
-		}
-	}
-
-	return targets
+	return p.classicalPreemptions(preemptionCtx)
 }
 
 var HumanReadablePreemptionReasons = map[string]string{
@@ -639,42 +617,6 @@ func cqIsBorrowing(cq *schdcache.ClusterQueueSnapshot, frsNeedPreemption sets.Se
 		}
 	}
 	return false
-}
-
-func (p *Preemptor) configurablePreemptions(preemptionCtx *preemptionCtx) []*Target {
-	preemptionConfig := &kueue.PreemptionConfig{}
-	preemptionConfigName := *preemptionCtx.preemptorCQ.PreemptionAnnotation
-	if err := p.client.Get(preemptionCtx.ctx, client.ObjectKey{Name: preemptionConfigName}, preemptionConfig); err != nil {
-		preemptionCtx.log.Error(err, "Failed to get PreemptionConfig", "preemptionConfigName", preemptionConfigName)
-		return nil
-	}
-
-	preemptionEvaluator := configurable.NewPreemptionEvaluator(preemptionCtx.ctx, preemptionCtx.log, preemptionCtx.clock, *preemptionConfig, p.client)
-
-	iter, err := preemptionEvaluator.Iter(preemptionCtx.snapshot, &preemptionCtx.preemptor, preemptionCtx.frsNeedPreemption)
-	if err != nil {
-		preemptionCtx.log.Error(err, "Failed to get candidates for preemption", "preemptionConfigName", preemptionConfigName)
-		return nil
-	}
-
-	var targets []*Target
-	for candidate := range iter {
-		preemptionCtx.snapshot.RemoveWorkload(candidate)
-		targets = append(targets, &Target{
-			WorkloadInfo: candidate,
-			// TODO: configurable_preemptions_test.go should be updated once reason is changed.
-			Reason:     "ConfigurablePreemption",
-			WorkloadCq: preemptionCtx.snapshot.ClusterQueue(candidate.ClusterQueue),
-		})
-
-		if workloadFits(preemptionCtx, true) {
-			restoreSnapshot(preemptionCtx.snapshot, targets)
-			return targets
-		}
-	}
-
-	restoreSnapshot(preemptionCtx.snapshot, targets)
-	return nil
 }
 
 // workloadFits determines if the workload requests would fit given the
