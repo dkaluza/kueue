@@ -393,11 +393,6 @@ func (in *ClusterQueueSpec) DeepCopyInto(out *ClusterQueueSpec) {
 		*out = new(ClusterQueuePreemption)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.PreemptionConfigName != nil {
-		in, out := &in.PreemptionConfigName, &out.PreemptionConfigName
-		*out = new(PreemptionConfigReference)
-		**out = **in
-	}
 	if in.AdmissionChecksStrategy != nil {
 		in, out := &in.AdmissionChecksStrategy, &out.AdmissionChecksStrategy
 		*out = new(AdmissionChecksStrategy)

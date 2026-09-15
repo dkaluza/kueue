@@ -62,16 +62,12 @@ type ClusterQueueReference string
 // +kubebuilder:validation:Pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
 type CohortReference string
 
-// PreemptionConfigReference is the name of the PreemptionConfig.
-// It must be a DNS (RFC 1123) and has the maximum length of 253 characters.
-//
-// +kubebuilder:validation:MaxLength=253
-// +kubebuilder:validation:Pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
-type PreemptionConfigReference string
+const (
+	AlphaPreemptionConfigAnnotation = "kueue.x-k8s.io/alpha-preemption-config"
+)
 
 // ClusterQueueSpec defines the desired state of ClusterQueue
 // +kubebuilder:validation:XValidation:rule="!has(self.cohortName) && has(self.resourceGroups) ? self.resourceGroups.all(rg, rg.flavors.all(f, f.resources.all(r, !has(r.borrowingLimit)))) : true", message="borrowingLimit must be nil when cohort is empty"
-// +kubebuilder:validation:XValidation:rule="!(has(self.preemption) && has(self.preemptionConfigName))", message="preemption and preemptionConfigName are mutually exclusive"
 type ClusterQueueSpec struct {
 	// resourceGroups describes groups of resources.
 	// Each resource group defines the list of resources and a list of flavors
@@ -129,17 +125,8 @@ type ClusterQueueSpec struct {
 	FlavorFungibility *FlavorFungibility `json:"flavorFungibility,omitempty"`
 
 	// preemption defines the preemption policies.
-	// This field is mutually exclusive with preemptionConfigName.
 	// +optional
 	Preemption *ClusterQueuePreemption `json:"preemption,omitempty"`
-
-	// preemptionConfigName is a reference to the PreemptionConfig to be used.
-	// Settings in PreemptionConfig overwrite any preemption defaults that may be in the system.
-	// The indicated config defines which workloads will be considered for preemption
-	// if a workload from this cluster queue cannot be scheduled due to resource or topology constraints.
-	// This field is mutually exclusive with preemption.
-	// +optional
-	PreemptionConfigName *PreemptionConfigReference `json:"preemptionConfigName,omitempty"`
 
 	// admissionChecksStrategy defines a list of strategies to determine which ResourceFlavors require AdmissionChecks.
 	// +optional

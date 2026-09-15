@@ -127,25 +127,34 @@ var _ = ginkgo.Describe("ClusterQueue Webhook", func() {
 					},
 				},
 			),
-			ginkgo.Entry("With preemptionConfigName",
+			ginkgo.Entry("With preemptionConfigAnnotation",
 				kueue.ClusterQueue{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "foo",
-					},
-					Spec: kueue.ClusterQueueSpec{
-						PreemptionConfigName: new(kueue.PreemptionConfigReference("my-config")),
+						Labels: map[string]string{
+							"kueue.x-k8s.io/alpha-preemption-config": "my-config",
+						},
 					},
 				},
 				kueue.ClusterQueue{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:       "foo",
+						Name: "foo",
+						Labels: map[string]string{
+							"kueue.x-k8s.io/alpha-preemption-config": "my-config",
+						},
 						Finalizers: []string{kueue.ResourceInUseFinalizerName},
 					},
 					Spec: kueue.ClusterQueueSpec{
-						QueueingStrategy:     kueue.BestEffortFIFO,
-						StopPolicy:           new(kueue.None),
-						FlavorFungibility:    defaultFlavorFungibility,
-						PreemptionConfigName: new(kueue.PreemptionConfigReference("my-config")),
+						QueueingStrategy:  kueue.BestEffortFIFO,
+						StopPolicy:        new(kueue.None),
+						FlavorFungibility: defaultFlavorFungibility,
+						Preemption: &kueue.ClusterQueuePreemption{
+							WithinClusterQueue:  kueue.PreemptionPolicyNever,
+							ReclaimWithinCohort: kueue.PreemptionPolicyNever,
+							BorrowWithinCohort: &kueue.BorrowWithinCohort{
+								Policy: kueue.BorrowWithinCohortPolicyNever,
+							},
+						},
 					},
 				},
 			),
@@ -571,19 +580,6 @@ var _ = ginkgo.Describe("ClusterQueue Webhook", func() {
 					},
 				},
 				gomega.Succeed()),
-			ginkgo.Entry("Should forbid to create clusterQueue when both preemption and preemptionConfigName are set",
-				&kueue.ClusterQueue{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "cluster-queue",
-					},
-					Spec: kueue.ClusterQueueSpec{
-						Preemption: &kueue.ClusterQueuePreemption{
-							ReclaimWithinCohort: kueue.PreemptionPolicyLowerPriority,
-						},
-						PreemptionConfigName: new(kueue.PreemptionConfigReference("my-config")),
-					},
-				},
-				utiltesting.BeInvalidError()),
 			ginkgo.Entry("Should allow zero FairSharing weight",
 				&kueue.ClusterQueue{
 					ObjectMeta: metav1.ObjectMeta{

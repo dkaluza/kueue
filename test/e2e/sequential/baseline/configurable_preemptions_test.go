@@ -90,13 +90,13 @@ var _ = ginkgo.Describe("Configuration Preemptions", ginkgo.Label("feature:confi
 
 		cohort := kueue.CohortReference("cohort-" + ns.Name)
 
-		cq = utiltestingapi.MakeClusterQueue("cq-" + ns.Name).
+		cq = utiltestingapi.MakeClusterQueue("cq-"+ns.Name).
 			Cohort(cohort).
 			ResourceGroup(*utiltestingapi.MakeFlavorQuotas(rf.Name).
 				Resource(corev1.ResourceCPU, "2").
 				Resource(corev1.ResourceMemory, "2G").
 				Obj()).
-			PreemptionConfigName(preemptionConfigName).
+			Annotation(kueue.AlphaPreemptionConfigAnnotation, preemptionConfigName).
 			Obj()
 		util.CreateClusterQueuesAndWaitForActive(ctx, k8sClient, cq)
 

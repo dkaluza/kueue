@@ -1107,9 +1107,7 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 preemption:
-                  description: |-
-                    preemption defines the preemption policies.
-                    This field is mutually exclusive with preemptionConfigName.
+                  description: preemption defines the preemption policies.
                   properties:
                     borrowWithinCohort:
                       default: {}
@@ -1187,16 +1185,6 @@ spec:
                   x-kubernetes-validations:
                     - message: reclaimWithinCohort=Never and borrowWithinCohort.Policy!=Never
                       rule: '!(self.reclaimWithinCohort == ''Never'' && has(self.borrowWithinCohort) &&  self.borrowWithinCohort.policy != ''Never'')'
-                preemptionConfigName:
-                  description: |-
-                    preemptionConfigName is a reference to the PreemptionConfig to be used.
-                    Settings in PreemptionConfig overwrite any preemption defaults that may be in the system.
-                    The indicated config defines which workloads will be considered for preemption
-                    if a workload from this cluster queue cannot be scheduled due to resource or topology constraints.
-                    This field is mutually exclusive with preemption.
-                  maxLength: 253
-                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                  type: string
                 queueingStrategy:
                   default: BestEffortFIFO
                   description: |-
@@ -1367,8 +1355,6 @@ spec:
               x-kubernetes-validations:
                 - message: borrowingLimit must be nil when cohort is empty
                   rule: '!has(self.cohortName) && has(self.resourceGroups) ? self.resourceGroups.all(rg, rg.flavors.all(f, f.resources.all(r, !has(r.borrowingLimit)))) : true'
-                - message: preemption and preemptionConfigName are mutually exclusive
-                  rule: '!(has(self.preemption) && has(self.preemptionConfigName))'
             status:
               description: status is the status of the ClusterQueue.
               properties:

@@ -318,7 +318,7 @@ func (c *Cache) snapshotClusterQueue(
 		AllocatableResourceGeneration: cq.AllocatableResourceGeneration,
 		Workloads:                     maps.Clone(cq.Workloads),
 		Preemption:                    cq.Preemption,
-		PreemptionConfigName:          cq.PreemptionConfigName,
+		PreemptionAnnotation:          cq.PreemptionAnnotation,
 		NamespaceSelector:             cq.NamespaceSelector,
 		Status:                        cq.Status,
 		AdmissionChecks:               utilmaps.DeepCopySets(cq.AdmissionChecks),

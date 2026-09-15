@@ -1216,7 +1216,6 @@ func autoConvert_v1beta2_ClusterQueueSpec_To_v1beta1_ClusterQueueSpec(in *v1beta
 	out.NamespaceSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NamespaceSelector))
 	out.FlavorFungibility = (*FlavorFungibility)(unsafe.Pointer(in.FlavorFungibility))
 	out.Preemption = (*ClusterQueuePreemption)(unsafe.Pointer(in.Preemption))
-	// WARNING: in.PreemptionConfigName requires manual conversion: does not exist in peer-type
 	out.AdmissionChecksStrategy = (*AdmissionChecksStrategy)(unsafe.Pointer(in.AdmissionChecksStrategy))
 	out.StopPolicy = (*StopPolicy)(unsafe.Pointer(in.StopPolicy))
 	out.FairSharing = (*FairSharing)(unsafe.Pointer(in.FairSharing))

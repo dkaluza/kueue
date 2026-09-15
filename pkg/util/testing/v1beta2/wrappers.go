@@ -1115,12 +1115,6 @@ func (c *ClusterQueueWrapper) Preemption(p kueue.ClusterQueuePreemption) *Cluste
 	return c
 }
 
-// PreemptionConfigName sets the preemptionConfigName reference.
-func (c *ClusterQueueWrapper) PreemptionConfigName(name string) *ClusterQueueWrapper {
-	c.Spec.PreemptionConfigName = new(kueue.PreemptionConfigReference(name))
-	return c
-}
-
 // FlavorFungibility sets the flavorFungibility policies.
 func (c *ClusterQueueWrapper) FlavorFungibility(p kueue.FlavorFungibility) *ClusterQueueWrapper {
 	c.Spec.FlavorFungibility = &p

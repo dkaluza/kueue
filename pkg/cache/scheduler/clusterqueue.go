@@ -61,7 +61,7 @@ type clusterQueue struct {
 	WorkloadsNotReady    sets.Set[workload.Reference]
 	NamespaceSelector    labels.Selector
 	Preemption           kueue.ClusterQueuePreemption
-	PreemptionConfigName *kueue.PreemptionConfigReference
+	PreemptionAnnotation *string
 	FairWeight           float64
 	FlavorFungibility    kueue.FlavorFungibility
 	// Aggregates AdmissionChecks from both .spec.AdmissionChecks and .spec.AdmissionCheckStrategy
@@ -181,9 +181,11 @@ func (c *clusterQueue) updateClusterQueue(
 	c.isStopped = ptr.Deref(in.Spec.StopPolicy, kueue.None) != kueue.None
 
 	c.AdmissionChecks = admissioncheck.NewAdmissionChecks(in)
-
-	c.PreemptionConfigName = in.Spec.PreemptionConfigName
-
+	if in.Annotations != nil {
+		if val, ok := in.Annotations[kueue.AlphaPreemptionConfigAnnotation]; ok {
+			c.PreemptionAnnotation = ptr.To(val)
+		}
+	}
 	if in.Spec.Preemption != nil {
 		c.Preemption = *in.Spec.Preemption
 	} else {

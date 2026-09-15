@@ -323,9 +323,9 @@ func TestValidateClusterQueue(t *testing.T) {
 			},
 		},
 		{
-			name: "valid preemptionConfigName with nil preemption",
+			name: "valid preemptionConfigAnnotation with nil preemption",
 			clusterQueue: utiltestingapi.MakeClusterQueue("cluster-queue").
-				PreemptionConfigName("my-preemption-config").
+				Annotation(kueue.AlphaPreemptionConfigAnnotation, "my-preemption-config").
 				Obj(),
 		},
 		{
@@ -539,24 +539,24 @@ func TestValidateClusterQueueUpdate(t *testing.T) {
 			wantErr:         nil,
 		},
 		{
-			name: "preemptionConfigName can be updated",
+			name: "preemptionConfigAnnotation can be updated",
 			oldClusterQueue: utiltestingapi.MakeClusterQueue("cluster-queue").
-				PreemptionConfigName("config-a").
+				Annotation(kueue.AlphaPreemptionConfigAnnotation, "config-a").
 				Obj(),
 			newClusterQueue: utiltestingapi.MakeClusterQueue("cluster-queue").
-				PreemptionConfigName("config-b").
+				Annotation(kueue.AlphaPreemptionConfigAnnotation, "config-b").
 				Obj(),
 			wantErr: nil,
 		},
 		{
-			name: "switching from preemption to preemptionConfigName on update is valid",
+			name: "switching from preemption to preemptionConfigAnnotation on update is valid",
 			oldClusterQueue: utiltestingapi.MakeClusterQueue("cluster-queue").
 				Preemption(kueue.ClusterQueuePreemption{
 					ReclaimWithinCohort: kueue.PreemptionPolicyLowerPriority,
 				}).
 				Obj(),
 			newClusterQueue: utiltestingapi.MakeClusterQueue("cluster-queue").
-				PreemptionConfigName("config-a").
+				Annotation(kueue.AlphaPreemptionConfigAnnotation, "config-a").
 				Obj(),
 			wantErr: nil,
 		},

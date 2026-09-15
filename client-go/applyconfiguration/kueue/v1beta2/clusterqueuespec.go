@@ -68,14 +68,7 @@ type ClusterQueueSpecApplyConfiguration struct {
 	// before borrowing or preempting in the flavor being evaluated.
 	FlavorFungibility *FlavorFungibilityApplyConfiguration `json:"flavorFungibility,omitempty"`
 	// preemption defines the preemption policies.
-	// This field is mutually exclusive with preemptionConfigName.
 	Preemption *ClusterQueuePreemptionApplyConfiguration `json:"preemption,omitempty"`
-	// preemptionConfigName is a reference to the PreemptionConfig to be used.
-	// Settings in PreemptionConfig overwrite any preemption defaults that may be in the system.
-	// The indicated config defines which workloads will be considered for preemption
-	// if a workload from this cluster queue cannot be scheduled due to resource or topology constraints.
-	// This field is mutually exclusive with preemption.
-	PreemptionConfigName *kueuev1beta2.PreemptionConfigReference `json:"preemptionConfigName,omitempty"`
 	// admissionChecksStrategy defines a list of strategies to determine which ResourceFlavors require AdmissionChecks.
 	AdmissionChecksStrategy *AdmissionChecksStrategyApplyConfiguration `json:"admissionChecksStrategy,omitempty"`
 	// stopPolicy - if set to a value different from None, the ClusterQueue is considered Inactive, no new reservation being
@@ -156,14 +149,6 @@ func (b *ClusterQueueSpecApplyConfiguration) WithFlavorFungibility(value *Flavor
 // If called multiple times, the Preemption field is set to the value of the last call.
 func (b *ClusterQueueSpecApplyConfiguration) WithPreemption(value *ClusterQueuePreemptionApplyConfiguration) *ClusterQueueSpecApplyConfiguration {
 	b.Preemption = value
-	return b
-}
-
-// WithPreemptionConfigName sets the PreemptionConfigName field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the PreemptionConfigName field is set to the value of the last call.
-func (b *ClusterQueueSpecApplyConfiguration) WithPreemptionConfigName(value kueuev1beta2.PreemptionConfigReference) *ClusterQueueSpecApplyConfiguration {
-	b.PreemptionConfigName = &value
 	return b
 }
 

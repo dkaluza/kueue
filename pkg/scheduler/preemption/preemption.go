@@ -163,7 +163,7 @@ func (p *Preemptor) getTargets(preemptionCtx *preemptionCtx) []*Target {
 	}
 
 	if features.Enabled(features.ConfigurablePreemption) {
-		if preemptionCtx.preemptorCQ.PreemptionConfigName != nil {
+		if preemptionCtx.preemptorCQ.PreemptionAnnotation != nil {
 			targetsSet := sets.New[workload.Reference]()
 			for _, target := range targets {
 				targetsSet.Insert(workload.Key(target.WorkloadInfo.Obj))
@@ -643,7 +643,7 @@ func cqIsBorrowing(cq *schdcache.ClusterQueueSnapshot, frsNeedPreemption sets.Se
 
 func (p *Preemptor) configurablePreemptions(preemptionCtx *preemptionCtx) []*Target {
 	preemptionConfig := &kueue.PreemptionConfig{}
-	preemptionConfigName := string(*preemptionCtx.preemptorCQ.PreemptionConfigName)
+	preemptionConfigName := *preemptionCtx.preemptorCQ.PreemptionAnnotation
 	if err := p.client.Get(preemptionCtx.ctx, client.ObjectKey{Name: preemptionConfigName}, preemptionConfig); err != nil {
 		preemptionCtx.log.Error(err, "Failed to get PreemptionConfig", "preemptionConfigName", preemptionConfigName)
 		return nil
