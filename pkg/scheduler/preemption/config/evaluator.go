@@ -81,7 +81,7 @@ func (p *preemptionEvaluator) buildCandidateQueues(
 	preemptor *workload.Info,
 	flavorsNeedPreemption sets.Set[resources.FlavorResource],
 ) ([]*ordering.CandidateQueue, func(a, b *workload.Info) int, error) {
-	cmpFunc := ordering.NewComparator(p.log, p.config.Spec.Ordering, preemptor, snapshot, p.clock.Now())
+	cmpFunc := ordering.NewComparator(p.log, p.clock.Now())
 	// Sorting CQ names ensures deterministic queue instantiation across scheduling cycles.
 	cqNames := slices.Sorted(maps.Keys(snapshot.ClusterQueues()))
 
@@ -97,7 +97,7 @@ func (p *preemptionEvaluator) buildCandidateQueues(
 		}
 
 		for selectorIdx, selector := range rule.Candidates {
-			filter, rejectAll := filters.NewCandidateFilters(p.ctx, p.log, &selector, preemptor, snapshot, p.reader)
+			filter, rejectAll := filters.NewCandidateFilters(p.log, &selector, preemptor, snapshot)
 			if rejectAll {
 				continue
 			}
@@ -147,10 +147,6 @@ func matchesWorkload(filter *filters.CandidateFilters, wl *workload.Info) bool {
 func (p *preemptionEvaluator) isActiveTrigger(rule kueue.PreemptionRule, wlInfo *workload.Info) (bool, error) {
 	condition := meta.FindStatusCondition(wlInfo.Obj.Status.Conditions, string(rule.Trigger))
 	if condition == nil || condition.Status == metav1.ConditionFalse {
-		return false, nil
-	}
-
-	if p.clock.Since(condition.LastTransitionTime.Time) < rule.MinTriggerRequiredDuration.Duration {
 		return false, nil
 	}
 

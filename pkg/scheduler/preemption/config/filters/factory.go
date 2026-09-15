@@ -17,11 +17,7 @@ limitations under the License.
 package filters
 
 import (
-	"context"
-
 	"github.com/go-logr/logr"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
@@ -29,26 +25,15 @@ import (
 )
 
 // NewCandidateFilters compiles PreemptionCandidateSelector rules into CandidateFilters & RejectAll boolean (if preemptor doesn't pass).
-// It returns (CandidateFilters{}, true) if the preemptor fails to match PreemptingWorkloadPrioritySelector and all the candidates should be rejected.
+// It returns (CandidateFilters{}, true) if the selector fails to compile and all the candidates should be rejected.
 func NewCandidateFilters(
-	ctx context.Context,
 	log logr.Logger,
 	selector *kueue.PreemptionCandidateSelector,
 	preemptor *workload.Info,
 	snapshot *schdcache.Snapshot,
-	reader client.Reader,
 ) (CandidateFilters, bool) {
 	if selector == nil {
 		return CandidateFilters{}, false
-	}
-
-	if !CheckPreemptingWorkloadPriority(ctx, log, selector.PreemptingWorkloadPrioritySelector, preemptor, reader) {
-		return CandidateFilters{}, true
-	}
-
-	wlPriorityFilters, ok := buildPriorityFilters(ctx, log, selector, preemptor, reader)
-	if !ok {
-		return CandidateFilters{}, true
 	}
 
 	cqRelationFilters, wlRelationFilters, ok := buildRelationFilters(log, selector.RelationRequirement, preemptor, snapshot)
@@ -56,6 +41,7 @@ func NewCandidateFilters(
 		return CandidateFilters{}, true
 	}
 	wlNumericFilters := buildNumericLabelFilters(log, selector.NumericLabels, preemptor)
+	wlPriorityFilters := buildPriorityFilters(log, selector, preemptor)
 
 	var wlFilters []WorkloadFilter
 	wlFilters = append(wlFilters, wlRelationFilters...)
@@ -115,28 +101,16 @@ func buildNumericLabelFilters(
 }
 
 func buildPriorityFilters(
-	ctx context.Context,
 	log logr.Logger,
 	selector *kueue.PreemptionCandidateSelector,
 	preemptor *workload.Info,
-	reader client.Reader,
-) ([]WorkloadFilter, bool) {
+) []WorkloadFilter {
 	if selector == nil {
-		return nil, true
+		return nil
 	}
 	var filters []WorkloadFilter
-	if selector.CandidateWorkloadPrioritySelector != nil {
-		ls, err := metav1.LabelSelectorAsSelector(selector.CandidateWorkloadPrioritySelector)
-		if err != nil {
-			log.Error(err, "Invalid CandidateWorkloadPrioritySelector", "selector", selector.CandidateWorkloadPrioritySelector)
-			return nil, false
-		}
-		if !ls.Empty() {
-			filters = append(filters, NewCandidateWorkloadPriorityFilter(ctx, log, ls, reader))
-		}
-	}
 	if selector.RelativeWorkloadPriority != nil {
 		filters = append(filters, NewRelativeWorkloadPriorityFilter(log, *selector.RelativeWorkloadPriority, preemptor))
 	}
-	return filters, true
+	return filters
 }

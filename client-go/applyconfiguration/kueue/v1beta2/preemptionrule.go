@@ -19,7 +19,6 @@ limitations under the License.
 package v1beta2
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 	kueuev1beta2 "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 )
@@ -32,8 +31,6 @@ type PreemptionRuleApplyConfiguration struct {
 	// using this rule.
 	MatchingPreemptorWorkloads *v1.LabelSelectorApplyConfiguration `json:"matchingPreemptorWorkloads,omitempty"`
 	Trigger                    *kueuev1beta2.PreemptionRuleTrigger `json:"trigger,omitempty"`
-	// How long the trigger has to occur to start preempting workloads specified by candidates. 0s indicates that preemptions can be started immediately. Default is 0s.
-	MinTriggerRequiredDuration *metav1.Duration `json:"minTriggerRequiredDuration,omitempty"`
 	// Selection rules for workloads that are candidates for preemption.
 	// Candidates resulting from multiple selectors are summed into one set. No selectors result in empty candidate set, thereby disallowing any preemptions with this rule.
 	Candidates []PreemptionCandidateSelectorApplyConfiguration `json:"candidates,omitempty"`
@@ -66,14 +63,6 @@ func (b *PreemptionRuleApplyConfiguration) WithMatchingPreemptorWorkloads(value 
 // If called multiple times, the Trigger field is set to the value of the last call.
 func (b *PreemptionRuleApplyConfiguration) WithTrigger(value kueuev1beta2.PreemptionRuleTrigger) *PreemptionRuleApplyConfiguration {
 	b.Trigger = &value
-	return b
-}
-
-// WithMinTriggerRequiredDuration sets the MinTriggerRequiredDuration field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the MinTriggerRequiredDuration field is set to the value of the last call.
-func (b *PreemptionRuleApplyConfiguration) WithMinTriggerRequiredDuration(value metav1.Duration) *PreemptionRuleApplyConfiguration {
-	b.MinTriggerRequiredDuration = &value
 	return b
 }
 

@@ -22,13 +22,10 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	configtesting "sigs.k8s.io/kueue/pkg/scheduler/preemption/config/testing"
-	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
 	utiltestingapi "sigs.k8s.io/kueue/pkg/util/testing/v1beta2"
 	"sigs.k8s.io/kueue/pkg/workload"
 )
@@ -48,35 +45,11 @@ func TestNewCandidateFilters(t *testing.T) {
 		ClusterQueue("cq1", "subA1").
 		Build()
 
-	clientReader := utiltesting.NewFakeClient(
-		utiltestingapi.MakeWorkloadPriorityClass("wpc-critical").Label("tier", "critical-training").Obj(),
-		utiltestingapi.MakeWorkloadPriorityClass("wpc-batch").Label("tier", "batch").Obj(),
-	)
-
 	preemptor := makeWorkloadInfo(utiltestingapi.MakeWorkload("preemptor", "ns1").
 		Queue("lq1").
 		Label("tpu-size", "8").
 		Priority(100).
 		Obj(), "cq1")
-
-	preemptorWithPC := makeWorkloadInfo(utiltestingapi.MakeWorkload("preemptorWithPC", "ns1").
-		Queue("lq1").
-		Label("tpu-size", "8").
-		Priority(100).
-		WorkloadPriorityClassRef("wpc-critical").
-		Obj(), "cq1")
-
-	preemptorWithBatchPC := makeWorkloadInfo(utiltestingapi.MakeWorkload("preemptorWithBatchPC", "ns1").
-		Queue("lq1").
-		WorkloadPriorityClassRef("wpc-batch").
-		Obj(), "cq1")
-
-	candSelectorPreemptible, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
-		MatchLabels: map[string]string{"preemptible": "true"},
-	})
-	if err != nil {
-		t.Fatalf("Failed to parse label selector: %v", err)
-	}
 
 	cases := map[string]struct {
 		selector      *kueue.PreemptionCandidateSelector
@@ -215,77 +188,9 @@ func TestNewCandidateFilters(t *testing.T) {
 				},
 			},
 		},
-		"PreemptingWorkloadPrioritySelector matching preemptor proceeds with compilation": {
-			selector: &kueue.PreemptionCandidateSelector{
-				RelationRequirement: kueue.SameClusterQueue,
-				PreemptingWorkloadPrioritySelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"tier": "critical-training"},
-				},
-			},
-			preemptor: preemptorWithPC,
-			wantFilters: CandidateFilters{
-				CQFilters: []ClusterQueueFilter{
-					&sameClusterQueueFilter{preemptorCQ: "cq1"},
-				},
-			},
-		},
-		"PreemptingWorkloadPrioritySelector not matching preemptor returns rejectAll true": {
-			selector: &kueue.PreemptionCandidateSelector{
-				RelationRequirement: kueue.SameClusterQueue,
-				PreemptingWorkloadPrioritySelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"tier": "critical-training"},
-				},
-			},
-			preemptor:     preemptorWithBatchPC,
-			wantFilters:   CandidateFilters{},
-			wantRejectAll: true,
-		},
-		"CandidateWorkloadPrioritySelector and RelativeWorkloadPriority are compiled into WLFilters": {
-			selector: &kueue.PreemptionCandidateSelector{
-				RelationRequirement: kueue.SameClusterQueue,
-				CandidateWorkloadPrioritySelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"preemptible": "true"},
-				},
-				RelativeWorkloadPriority: ptr.To(kueue.LowerOrEqual),
-			},
-			preemptor: preemptorWithPC,
-			wantFilters: CandidateFilters{
-				CQFilters: []ClusterQueueFilter{
-					&sameClusterQueueFilter{preemptorCQ: "cq1"},
-				},
-				WLFilters: []WorkloadFilter{
-					&candidateWorkloadPriorityFilter{
-						selector: candSelectorPreemptible,
-					},
-					&relativeWorkloadPriorityFilter{
-						relation:          kueue.LowerOrEqual,
-						preemptorPriority: 100,
-					},
-				},
-			},
-		},
-		"CandidateWorkloadPrioritySelector with invalid selector returns rejectAll true": {
-			selector: &kueue.PreemptionCandidateSelector{
-				RelationRequirement: kueue.SameClusterQueue,
-				CandidateWorkloadPrioritySelector: &metav1.LabelSelector{
-					MatchExpressions: []metav1.LabelSelectorRequirement{
-						{Key: "tier", Operator: metav1.LabelSelectorOperator("InvalidOp")},
-					},
-				},
-			},
-			preemptor:     preemptorWithPC,
-			wantFilters:   CandidateFilters{},
-			wantRejectAll: true,
-		},
 		"Full combination of all selector criteria compiles into complete CandidateFilters": {
 			selector: &kueue.PreemptionCandidateSelector{
 				RelationRequirement: kueue.SameCohort,
-				PreemptingWorkloadPrioritySelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"tier": "critical-training"},
-				},
-				CandidateWorkloadPrioritySelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"preemptible": "true"},
-				},
 				RelativeWorkloadPriority: ptr.To(kueue.Lower),
 				NumericLabels: []kueue.NumericLabelConstraint{
 					{
@@ -294,7 +199,7 @@ func TestNewCandidateFilters(t *testing.T) {
 					},
 				},
 			},
-			preemptor: preemptorWithPC,
+			preemptor: preemptor,
 			wantFilters: CandidateFilters{
 				CQFilters: []ClusterQueueFilter{
 					&sameCohortFilter{
@@ -310,9 +215,6 @@ func TestNewCandidateFilters(t *testing.T) {
 							Relation: ptr.To(kueue.Lower),
 						},
 						preemptorVal: ptr.To[int32](8),
-					},
-					&candidateWorkloadPriorityFilter{
-						selector: candSelectorPreemptible,
 					},
 					&relativeWorkloadPriorityFilter{
 						relation:          kueue.Lower,
@@ -385,27 +287,16 @@ func TestNewCandidateFilters(t *testing.T) {
 			sameCohortTreeFilter{},
 			sameLocalQueueFilter{},
 			numericLabelFilter{},
-			candidateWorkloadPriorityFilter{},
 			relativeWorkloadPriorityFilter{},
 		),
 		cmpopts.IgnoreFields(numericLabelFilter{}, "log"),
-		cmpopts.IgnoreFields(candidateWorkloadPriorityFilter{}, "ctx", "log", "reader"),
 		cmpopts.IgnoreFields(relativeWorkloadPriorityFilter{}, "log"),
-		cmp.Comparer(func(a, b labels.Selector) bool {
-			if a == nil && b == nil {
-				return true
-			}
-			if a == nil || b == nil {
-				return false
-			}
-			return a.String() == b.String()
-		}),
 		cmpopts.EquateEmpty(),
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			gotFilters, gotRejectAll := NewCandidateFilters(t.Context(), logr.Discard(), tc.selector, tc.preemptor, snapshot, clientReader)
+			gotFilters, gotRejectAll := NewCandidateFilters(logr.Discard(), tc.selector, tc.preemptor, snapshot)
 			if gotRejectAll != tc.wantRejectAll {
 				t.Errorf("NewCandidateFilters() rejectAll = %v, want %v", gotRejectAll, tc.wantRejectAll)
 			}

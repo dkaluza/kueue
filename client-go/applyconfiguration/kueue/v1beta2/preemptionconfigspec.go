@@ -23,13 +23,6 @@ package v1beta2
 type PreemptionConfigSpecApplyConfiguration struct {
 	// Rules to select preemption candidates.
 	Rules []PreemptionRuleApplyConfiguration `json:"rules,omitempty"`
-	// Ordering of preemption candidates evaluated sequentially as a multi-key comparator chain.
-	// The order is always deterministic, as the Workload UID is used as the final tie-breaker.
-	// If not set, candidates will be ordered by default like this:
-	// 1. Priority (Ascending: lowest priority first)
-	// 2. AdmissionTimestamp (Descending: most recently admitted first, protecting long-running workloads)
-	// 3. UID (Ascending: deterministic tie-breaker)
-	Ordering []OrderApplyConfiguration `json:"ordering,omitempty"`
 }
 
 // PreemptionConfigSpecApplyConfiguration constructs a declarative configuration of the PreemptionConfigSpec type for use with
@@ -47,19 +40,6 @@ func (b *PreemptionConfigSpecApplyConfiguration) WithRules(values ...*Preemption
 			panic("nil value passed to WithRules")
 		}
 		b.Rules = append(b.Rules, *values[i])
-	}
-	return b
-}
-
-// WithOrdering adds the given value to the Ordering field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the Ordering field.
-func (b *PreemptionConfigSpecApplyConfiguration) WithOrdering(values ...*OrderApplyConfiguration) *PreemptionConfigSpecApplyConfiguration {
-	for i := range values {
-		if values[i] == nil {
-			panic("nil value passed to WithOrdering")
-		}
-		b.Ordering = append(b.Ordering, *values[i])
 	}
 	return b
 }

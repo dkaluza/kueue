@@ -96,14 +96,6 @@ type PreemptionConfigList struct {
 type PreemptionConfigSpec struct {
 	// Rules to select preemption candidates.
 	Rules []PreemptionRule `json:"rules,omitempty"`
-	// Ordering of preemption candidates evaluated sequentially as a multi-key comparator chain.
-	// The order is always deterministic, as the Workload UID is used as the final tie-breaker.
-	// If not set, candidates will be ordered by default like this:
-	// 1. Priority (Ascending: lowest priority first)
-	// 2. AdmissionTimestamp (Descending: most recently admitted first, protecting long-running workloads)
-	// 3. UID (Ascending: deterministic tie-breaker)
-	// +optional
-	Ordering []Order `json:"ordering,omitempty"`
 }
 
 type PreemptionRuleTrigger string
@@ -122,9 +114,6 @@ type PreemptionRule struct {
 	MatchingPreemptorWorkloads metav1.LabelSelector `json:"matchingPreemptorWorkloads,omitempty"`
 
 	Trigger PreemptionRuleTrigger `json:"trigger,omitempty"`
-
-	// How long the trigger has to occur to start preempting workloads specified by candidates. 0s indicates that preemptions can be started immediately. Default is 0s.
-	MinTriggerRequiredDuration metav1.Duration `json:"minTriggerRequiredDuration,omitempty"`
 
 	// Selection rules for workloads that are candidates for preemption.
 	// Candidates resulting from multiple selectors are summed into one set. No selectors result in empty candidate set, thereby disallowing any preemptions with this rule.
@@ -179,96 +168,10 @@ type PreemptionCandidateSelector struct {
 	// +optional
 	NumericLabels []NumericLabelConstraint `json:"numericLabels,omitempty"`
 
-	// PreemptingWorkloadPrioritySelector specifies a label selector matching labels
-	// on the preemptor workload's PriorityClass or WorkloadPriorityClass.
-	// Workloads whose priority class matches the selector can trigger preemption of candidates defined by this selector.
-	// If not specified or empty, all preemptor priority classes are accepted.
-	// +optional
-	PreemptingWorkloadPrioritySelector *metav1.LabelSelector `json:"preemptingWorkloadPrioritySelector,omitempty"`
-
-	// CandidateWorkloadPrioritySelector specifies a label selector matching labels
-	// on the candidate workload's PriorityClass or WorkloadPriorityClass.
-	// Workloads whose priority class matches the selector are permitted as preemption candidates.
-	// If not specified or empty, all candidate priority classes are accepted.
-	// +optional
-	CandidateWorkloadPrioritySelector *metav1.LabelSelector `json:"candidateWorkloadPrioritySelector,omitempty"`
-
 	// RelativeWorkloadPriority defines how the preemptor's priority compares to the candidate's priority.
 	// For example "Lower" means that only workloads with lower priority will be allowed as preemption candidates.
 	// The comparison is made using effective priority (accounting for priority boost if enabled).
 	// If nil, no relative priority check is enforced.
 	// +optional
 	RelativeWorkloadPriority *RelativeConstraint `json:"relativeWorkloadPriority,omitempty"`
-}
-
-// OrderingField specifies the property of candidate workloads to sort by during preemption evaluation.
-// Supported values are:
-// - "Priority": orders workloads by effective priority (accounting for priority boost if enabled).
-//   - Ascending (default): lowest priority first.
-//   - Descending: highest priority first.
-//
-// - "AdmissionTimestamp": orders workloads by the timestamp when quota was reserved (admitted).
-//   - Ascending (default): oldest admitted workloads first and most recently admitted last.
-//   - Descending: most recently admitted workloads first and oldest admitted last.
-//
-// - "IsOtherCQ": orders workloads based on whether they belong to a different ClusterQueue than the preemptor.
-//   - Ascending (default): workloads from the same ClusterQueue first, followed by other ClusterQueues.
-//   - Descending: workloads from other ClusterQueues first, followed by the same ClusterQueue.
-//
-// - "IsOtherCohort": orders workloads based on whether they belong to a different Cohort than the preemptor.
-//   - Ascending (default): workloads from the same Cohort first, followed by other Cohorts.
-//   - Descending: workloads from other Cohorts first, followed by the same Cohort.
-//
-// +kubebuilder:validation:Enum=Priority;AdmissionTimestamp;IsOtherCQ;IsOtherCohort
-type OrderingField string
-
-const (
-	// Priority orders candidates by effective priority (accounting for priority boost if enabled).
-	// Ascending order places lowest priority candidates first.
-	Priority OrderingField = "Priority"
-
-	// AdmissionTimestamp orders candidates by the time quota was reserved.
-	// Ascending order places oldest admitted candidates first and most recently admitted last.
-	AdmissionTimestamp OrderingField = "AdmissionTimestamp"
-
-	// IsOtherCQ orders candidates based on whether their ClusterQueue differs from the preemptor.
-	// Ascending order places workloads from the same ClusterQueue first.
-	IsOtherCQ OrderingField = "IsOtherCQ"
-
-	// IsOtherCohort orders candidates based on whether their direct Cohort differs from the preemptor.
-	// Ascending order places workloads from the same Cohort first.
-	IsOtherCohort OrderingField = "IsOtherCohort"
-)
-
-// OrderingDirection specifies the sort direction for a candidate ordering criterion.
-// Possible values are:
-// - "Ascending": sort in natural ascending order (default).
-// - "Descending": sort in reverse/descending order.
-//
-// +kubebuilder:validation:Enum=Ascending;Descending
-type OrderingDirection string
-
-const (
-	// Ascending sorts candidate workloads in natural order (e.g., lowest priority first, oldest admission first, or same CQ/Cohort first).
-	Ascending OrderingDirection = "Ascending"
-
-	// Descending sorts candidate workloads in reverse order (e.g., highest priority first, newest admission first, or other CQ/Cohort first).
-	Descending OrderingDirection = "Descending"
-)
-
-// Order specifies a single sorting criterion and direction for ordering preemption candidates.
-// Multiple Order criteria are evaluated sequentially as a multi-key comparator chain,
-// with ties broken by Workload UID for deterministic ordering.
-type Order struct {
-	// OrderingField specifies the field to sort preemption candidates by.
-	//
-	// +kubebuilder:validation:Required
-	OrderingField OrderingField `json:"orderingField"`
-
-	// Direction specifies the sorting direction (Ascending or Descending).
-	// Defaults to Ascending if not specified.
-	//
-	// +kubebuilder:default=Ascending
-	// +optional
-	Direction OrderingDirection `json:"direction,omitempty"`
 }

@@ -256,27 +256,6 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			preemptorCq: "a",
 			wantWlOrder: []string{"a1", "a2"},
 		},
-		"trigger isn't active because of min trigger requirement duration ": {
-			clusterQueues: baseCqs,
-			config: kueue.PreemptionConfig{
-				Spec: kueue.PreemptionConfigSpec{
-					Rules: []kueue.PreemptionRule{
-						{
-							Name:                       "test",
-							Trigger:                    kueue.InsufficientTopology,
-							MinTriggerRequiredDuration: metav1.Duration{Duration: 10 * time.Minute},
-						},
-					},
-				},
-			},
-			admitted: []kueue.Workload{
-				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
-				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
-			},
-			preemptorWl: unitWl.Clone().Name("a-incoming").Condition(insufficientTopologyCond).Obj(),
-			preemptorCq: "a",
-			wantWlOrder: []string{},
-		},
 		"rule with matching preemptor labels selector is triggered for matching workload": {
 			clusterQueues: baseCqs,
 			config: kueue.PreemptionConfig{
@@ -511,115 +490,17 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			preemptorCq: "a",
 			wantWlOrder: []string{"a1", "b1"},
 		},
-		"PreemptingWorkloadPrioritySelector rejects when preemptor does not match priority selector": {
+		"RelativeWorkloadPriority filters candidates with higher priority": {
 			clusterQueues: baseCqs,
 			config: kueue.PreemptionConfig{
 				Spec: kueue.PreemptionConfigSpec{
 					Rules: []kueue.PreemptionRule{
 						{
-							Name:    "priority-gated rule",
+							Name:    "relative-priority rule",
 							Trigger: kueue.InsufficientQuota,
 							Candidates: []kueue.PreemptionCandidateSelector{
 								{
-									RelationRequirement: kueue.SameClusterQueue,
-									PreemptingWorkloadPrioritySelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{"tier": "critical"},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			admitted: []kueue.Workload{
-				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
-				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
-			},
-			preemptorWl: unitWl.Clone().Name("a-incoming").
-				PriorityClassRef(kueue.NewWorkloadPriorityClassRef("batch-tier")).
-				Condition(insufficientQuotaCond).Obj(),
-			preemptorCq: "a",
-			wantWlOrder: []string{},
-		},
-		"PreemptingWorkloadPrioritySelector allows when preemptor matches priority selector": {
-			clusterQueues: baseCqs,
-			config: kueue.PreemptionConfig{
-				Spec: kueue.PreemptionConfigSpec{
-					Rules: []kueue.PreemptionRule{
-						{
-							Name:    "priority-gated rule",
-							Trigger: kueue.InsufficientQuota,
-							Candidates: []kueue.PreemptionCandidateSelector{
-								{
-									RelationRequirement: kueue.SameClusterQueue,
-									PreemptingWorkloadPrioritySelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{"tier": "critical"},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			admitted: []kueue.Workload{
-				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
-				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
-			},
-			preemptorWl: unitWl.Clone().Name("a-incoming").
-				PriorityClassRef(kueue.NewWorkloadPriorityClassRef("critical-tier")).
-				Condition(insufficientQuotaCond).Obj(),
-			preemptorCq: "a",
-			wantWlOrder: []string{"a1", "a2"},
-		},
-		"CandidateWorkloadPrioritySelector filters candidates matching priority selector": {
-			clusterQueues: baseCqs,
-			config: kueue.PreemptionConfig{
-				Spec: kueue.PreemptionConfigSpec{
-					Rules: []kueue.PreemptionRule{
-						{
-							Name:    "candidate-priority rule",
-							Trigger: kueue.InsufficientQuota,
-							Candidates: []kueue.PreemptionCandidateSelector{
-								{
-									RelationRequirement: kueue.SameClusterQueue,
-									CandidateWorkloadPrioritySelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{"tier": "batch"},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			admitted: []kueue.Workload{
-				*unitWl.Clone().Name("a1").
-					PriorityClassRef(kueue.NewWorkloadPriorityClassRef("batch-tier")).
-					SimpleReserveQuota("a", "default", now).Obj(),
-				*unitWl.Clone().Name("a2").
-					PriorityClassRef(kueue.NewWorkloadPriorityClassRef("critical-tier")).
-					SimpleReserveQuota("a", "default", now).Obj(),
-			},
-			preemptorWl: unitWl.Clone().Name("a-incoming").Condition(insufficientQuotaCond).Obj(),
-			preemptorCq: "a",
-			wantWlOrder: []string{"a1"},
-		},
-		"Priority selectors combined with RelativeWorkloadPriority": {
-			clusterQueues: baseCqs,
-			config: kueue.PreemptionConfig{
-				Spec: kueue.PreemptionConfigSpec{
-					Rules: []kueue.PreemptionRule{
-						{
-							Name:    "combined-priority rule",
-							Trigger: kueue.InsufficientQuota,
-							Candidates: []kueue.PreemptionCandidateSelector{
-								{
-									RelationRequirement: kueue.SameClusterQueue,
-									PreemptingWorkloadPrioritySelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{"tier": "critical"},
-									},
-									CandidateWorkloadPrioritySelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{"tier": "batch"},
-									},
+									RelationRequirement:      kueue.SameClusterQueue,
 									RelativeWorkloadPriority: ptr.To(kueue.Lower),
 								},
 							},
@@ -628,23 +509,10 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 				},
 			},
 			admitted: []kueue.Workload{
-				*unitWl.Clone().Name("a1").
-					PriorityClassRef(kueue.NewWorkloadPriorityClassRef("batch-tier")).
-					Priority(50).
-					SimpleReserveQuota("a", "default", now).Obj(),
-				*unitWl.Clone().Name("a2").
-					PriorityClassRef(kueue.NewWorkloadPriorityClassRef("batch-tier")).
-					Priority(150).
-					SimpleReserveQuota("a", "default", now).Obj(),
-				*unitWl.Clone().Name("a3").
-					PriorityClassRef(kueue.NewWorkloadPriorityClassRef("critical-tier")).
-					Priority(50).
-					SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a1").Priority(50).SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").Priority(150).SimpleReserveQuota("a", "default", now).Obj(),
 			},
-			preemptorWl: unitWl.Clone().Name("a-incoming").
-				PriorityClassRef(kueue.NewWorkloadPriorityClassRef("critical-tier")).
-				Priority(100).
-				Condition(insufficientQuotaCond).Obj(),
+			preemptorWl: unitWl.Clone().Name("a-incoming").Priority(100).Condition(insufficientQuotaCond).Obj(),
 			preemptorCq: "a",
 			wantWlOrder: []string{"a1"},
 		},
@@ -652,10 +520,7 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			clusterQueues: baseCqs,
 			config: kueue.PreemptionConfig{
 				Spec: kueue.PreemptionConfigSpec{
-					Ordering: []kueue.Order{
-						{OrderingField: kueue.Priority},
-						{OrderingField: kueue.AdmissionTimestamp, Direction: kueue.Descending},
-					},
+
 					Rules: []kueue.PreemptionRule{
 						{
 							Name:    "multi-key ordering rule",
@@ -683,7 +548,7 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			clusterQueues: baseCqs,
 			config: kueue.PreemptionConfig{
 				Spec: kueue.PreemptionConfigSpec{
-					Ordering: []kueue.Order{{OrderingField: kueue.Priority}},
+
 					Rules: []kueue.PreemptionRule{
 						{
 							Name:    "rule-1",
@@ -717,54 +582,7 @@ func TestPreemptionEvaluatorIter(t *testing.T) {
 			preemptorCq: "a",
 			wantWlOrder: []string{"a1-same-cq", "b1-sibling-cq"},
 		},
-		"deep hierarchical cohort tree (4 levels) with IsOtherCohort ordering": {
-			cohorts: []*kueue.Cohort{
-				utiltestingapi.MakeCohort("root").Obj(),
-				utiltestingapi.MakeCohort("lvl1").Parent("root").Obj(),
-				utiltestingapi.MakeCohort("lvl2").Parent("lvl1").Obj(),
-				utiltestingapi.MakeCohort("lvl3").Parent("lvl2").Obj(),
-				utiltestingapi.MakeCohort("lvl1-sib").Parent("root").Obj(),
-			},
-			clusterQueues: []*kueue.ClusterQueue{
-				utiltestingapi.MakeClusterQueue("cq-deep-1").Cohort("lvl3").
-					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").Resource(corev1.ResourceCPU, "10").Obj()).Obj(),
-				utiltestingapi.MakeClusterQueue("cq-deep-2").Cohort("lvl3").
-					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").Resource(corev1.ResourceCPU, "10").Obj()).Obj(),
-				utiltestingapi.MakeClusterQueue("cq-root").Cohort("root").
-					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").Resource(corev1.ResourceCPU, "10").Obj()).Obj(),
-				utiltestingapi.MakeClusterQueue("cq-sib-branch").Cohort("lvl1-sib").
-					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").Resource(corev1.ResourceCPU, "10").Obj()).Obj(),
-				utiltestingapi.MakeClusterQueue("cq-standalone").
-					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").Resource(corev1.ResourceCPU, "10").Obj()).Obj(),
-			},
-			config: kueue.PreemptionConfig{
-				Spec: kueue.PreemptionConfigSpec{
-					Ordering: []kueue.Order{{OrderingField: kueue.IsOtherCohort}},
-					Rules: []kueue.PreemptionRule{
-						{
-							Name:    "all-cohorts-rule",
-							Trigger: kueue.InsufficientQuota,
-							Candidates: []kueue.PreemptionCandidateSelector{
-								{
-									RelationRequirement: kueue.AnyClusterQueue,
-								},
-							},
-						},
-					},
-				},
-			},
-			admitted: []kueue.Workload{
-				*unitWl.Clone().Name("w-same-cq").SimpleReserveQuota("cq-deep-1", "default", now).Obj(),
-				*unitWl.Clone().Name("w-same-cohort-sib").SimpleReserveQuota("cq-deep-2", "default", now).Obj(),
-				*unitWl.Clone().Name("w-root-cq").SimpleReserveQuota("cq-root", "default", now).Obj(),
-				*unitWl.Clone().Name("w-sib-branch").SimpleReserveQuota("cq-sib-branch", "default", now).Obj(),
-				*unitWl.Clone().Name("w-standalone").SimpleReserveQuota("cq-standalone", "default", now).Obj(),
-			},
-			preemptorWl: unitWl.Clone().Name("incoming").Condition(insufficientQuotaCond).Obj(),
-			preemptorCq: "cq-deep-1",
-			wantWlOrder: []string{"w-same-cohort-sib", "w-same-cq", "w-root-cq", "w-sib-branch", "w-standalone"},
-		},
-	}
+			}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -19,7 +19,6 @@ limitations under the License.
 package v1beta2
 
 import (
-	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 	kueuev1beta2 "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 )
 
@@ -34,16 +33,6 @@ type PreemptionCandidateSelectorApplyConfiguration struct {
 	// Multiple numeric label constraints are joined using logical AND (all must be satisfied).
 	// If not set does not add any additional candidate filtering.
 	NumericLabels []NumericLabelConstraintApplyConfiguration `json:"numericLabels,omitempty"`
-	// PreemptingWorkloadPrioritySelector specifies a label selector matching labels
-	// on the preemptor workload's PriorityClass or WorkloadPriorityClass.
-	// Workloads whose priority class matches the selector can trigger preemption of candidates defined by this selector.
-	// If not specified or empty, all preemptor priority classes are accepted.
-	PreemptingWorkloadPrioritySelector *v1.LabelSelectorApplyConfiguration `json:"preemptingWorkloadPrioritySelector,omitempty"`
-	// CandidateWorkloadPrioritySelector specifies a label selector matching labels
-	// on the candidate workload's PriorityClass or WorkloadPriorityClass.
-	// Workloads whose priority class matches the selector are permitted as preemption candidates.
-	// If not specified or empty, all candidate priority classes are accepted.
-	CandidateWorkloadPrioritySelector *v1.LabelSelectorApplyConfiguration `json:"candidateWorkloadPrioritySelector,omitempty"`
 	// RelativeWorkloadPriority defines how the preemptor's priority compares to the candidate's priority.
 	// For example "Lower" means that only workloads with lower priority will be allowed as preemption candidates.
 	// The comparison is made using effective priority (accounting for priority boost if enabled).
@@ -75,22 +64,6 @@ func (b *PreemptionCandidateSelectorApplyConfiguration) WithNumericLabels(values
 		}
 		b.NumericLabels = append(b.NumericLabels, *values[i])
 	}
-	return b
-}
-
-// WithPreemptingWorkloadPrioritySelector sets the PreemptingWorkloadPrioritySelector field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the PreemptingWorkloadPrioritySelector field is set to the value of the last call.
-func (b *PreemptionCandidateSelectorApplyConfiguration) WithPreemptingWorkloadPrioritySelector(value *v1.LabelSelectorApplyConfiguration) *PreemptionCandidateSelectorApplyConfiguration {
-	b.PreemptingWorkloadPrioritySelector = value
-	return b
-}
-
-// WithCandidateWorkloadPrioritySelector sets the CandidateWorkloadPrioritySelector field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the CandidateWorkloadPrioritySelector field is set to the value of the last call.
-func (b *PreemptionCandidateSelectorApplyConfiguration) WithCandidateWorkloadPrioritySelector(value *v1.LabelSelectorApplyConfiguration) *PreemptionCandidateSelectorApplyConfiguration {
-	b.CandidateWorkloadPrioritySelector = value
 	return b
 }
 

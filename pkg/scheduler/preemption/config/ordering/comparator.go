@@ -22,81 +22,32 @@ import (
 
 	"github.com/go-logr/logr"
 
-	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
-	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/common"
 	"sigs.k8s.io/kueue/pkg/util/priority"
 	"sigs.k8s.io/kueue/pkg/workload"
 )
 
-var defaultOrdering = []kueue.Order{
-	{OrderingField: kueue.Priority, Direction: kueue.Ascending},
-	{OrderingField: kueue.AdmissionTimestamp, Direction: kueue.Descending},
-}
-
 // NewComparator returns a comparator function that compares two candidate workloads
-// according to the configured ordering rules and UID tie-breaking. If ordering is empty,
-// it defaults to:
+// according to candidate ordering rules and UID tie-breaking:
 // 1. Priority (Ascending: lowest priority first)
 // 2. AdmissionTimestamp (Descending: most recently admitted first, protecting long-running workloads)
 // 3. UID (Ascending: deterministic tie-breaker)
-//
-// Natural field comparisons:
-// - Priority: Natural integer comparison (cmp.Compare(prioA, prioB)).
-// - AdmissionTimestamp: Natural time comparison (timestampA.Compare(timestampB)).
-// - IsOtherCQ: Natural boolean comparison (compareBool(isOtherA, isOtherB) where false < true).
-// - IsOtherCohort: Natural boolean comparison (compareBool(isOtherCohortA, isOtherCohortB) where false < true).
-//
-// Direction handling:
-// - Ascending (default): Preserves natural comparison result.
-// - Descending: Negates comparison result (res = -res).
-//
-// Deterministic tie-breaker:
-// - Workload UID comparison (cmp.Compare(a.Obj.UID, b.Obj.UID)).
-//
-// Preemptor CQ and Cohort lookups are cached within the closure for efficiency.
 func NewComparator(
 	log logr.Logger,
-	ordering []kueue.Order,
-	preemptor *workload.Info,
-	snapshot *schdcache.Snapshot,
 	now time.Time,
 ) func(a, b *workload.Info) int {
-	if len(ordering) == 0 {
-		ordering = defaultOrdering
-	}
-
-	preemptorCQName := preemptor.ClusterQueue
-	var preemptorCohort kueue.CohortReference
-	var hasPreemptorCohort bool
-	if cq := snapshot.ClusterQueue(preemptorCQName); cq != nil && cq.HasParent() {
-		preemptorCohort = cq.Parent().GetName()
-		hasPreemptorCohort = true
-	}
-
 	return func(a, b *workload.Info) int {
 		if a == b {
 			return 0
 		}
 
-		for _, order := range ordering {
-			var res int
-			switch order.OrderingField {
-			case kueue.Priority:
-				res = comparePriority(log, a, b)
-			case kueue.AdmissionTimestamp:
-				res = compareAdmissionTimestamp(a, b, now)
-			case kueue.IsOtherCQ:
-				res = compareIsOtherCQ(a, b, preemptorCQName)
-			case kueue.IsOtherCohort:
-				res = compareIsOtherCohort(a, b, preemptorCQName, preemptorCohort, hasPreemptorCohort, snapshot)
-			}
-			if res != 0 {
-				if order.Direction == kueue.Descending {
-					return -res
-				}
-				return res
-			}
+		if res := comparePriority(log, a, b); res != 0 {
+			return res
+		}
+
+		if res := compareAdmissionTimestamp(a, b, now); res != 0 {
+			// Descending: most recently admitted first
+			return -res
 		}
 
 		return compareUID(a, b)
@@ -113,45 +64,6 @@ func compareAdmissionTimestamp(a, b *workload.Info, now time.Time) int {
 	timestampA := common.QuotaReservationTime(a.Obj, now)
 	timestampB := common.QuotaReservationTime(b.Obj, now)
 	return timestampA.Compare(timestampB)
-}
-
-func compareIsOtherCQ(a, b *workload.Info, preemptorCQName kueue.ClusterQueueReference) int {
-	isOtherA := a.ClusterQueue != preemptorCQName
-	isOtherB := b.ClusterQueue != preemptorCQName
-	return compareBool(isOtherA, isOtherB)
-}
-
-func compareIsOtherCohort(a, b *workload.Info, preemptorCQName kueue.ClusterQueueReference, preemptorCohort kueue.CohortReference, hasPreemptorCohort bool, snapshot *schdcache.Snapshot) int {
-	isOtherCohortA := !isSameCohort(a, preemptorCQName, preemptorCohort, hasPreemptorCohort, snapshot)
-	isOtherCohortB := !isSameCohort(b, preemptorCQName, preemptorCohort, hasPreemptorCohort, snapshot)
-	return compareBool(isOtherCohortA, isOtherCohortB)
-}
-
-// compareBool performs standard mathematical comparison of two boolean values
-// where false (0) is strictly less than true (1).
-// TODO: Replace with cmputil.CompareBool once synced with upstream (https://github.com/kubernetes-sigs/kueue/issues/15118).
-func compareBool(a, b bool) int {
-	if a == b {
-		return 0
-	}
-	if !a {
-		return -1
-	}
-	return 1
-}
-
-func isSameCohort(wl *workload.Info, preemptorCQName kueue.ClusterQueueReference, preemptorCohort kueue.CohortReference, hasPreemptorCohort bool, snapshot *schdcache.Snapshot) bool {
-	if wl.ClusterQueue == preemptorCQName {
-		return true
-	}
-	if !hasPreemptorCohort {
-		return false
-	}
-	candCQ := snapshot.ClusterQueue(wl.ClusterQueue)
-	if candCQ == nil || !candCQ.HasParent() {
-		return false
-	}
-	return candCQ.Parent().GetName() == preemptorCohort
 }
 
 func compareUID(a, b *workload.Info) int {
