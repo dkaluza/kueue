@@ -131,7 +131,7 @@ var _ = ginkgo.Describe("ClusterQueue Webhook", func() {
 				kueue.ClusterQueue{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "foo",
-						Labels: map[string]string{
+						Annotations: map[string]string{
 							"kueue.x-k8s.io/preemption-config": "my-config",
 						},
 					},
@@ -139,7 +139,7 @@ var _ = ginkgo.Describe("ClusterQueue Webhook", func() {
 				kueue.ClusterQueue{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "foo",
-						Labels: map[string]string{
+						Annotations: map[string]string{
 							"kueue.x-k8s.io/preemption-config": "my-config",
 						},
 						Finalizers: []string{kueue.ResourceInUseFinalizerName},
