@@ -63,7 +63,7 @@ type ClusterQueueReference string
 type CohortReference string
 
 const (
-	AlphaPreemptionConfigAnnotation = "kueue.x-k8s.io/preemption-config"
+	PreemptionConfigAnnotation = "kueue.x-k8s.io/preemption-config"
 )
 
 // ClusterQueueSpec defines the desired state of ClusterQueue

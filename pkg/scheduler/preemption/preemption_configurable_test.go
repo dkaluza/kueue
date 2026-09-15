@@ -49,7 +49,7 @@ func TestConfigurablePreemptions(t *testing.T) {
 			Cohort("all").
 			ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
 				Resource(corev1.ResourceCPU, "2").Obj()).
-			Annotation(kueue.AlphaPreemptionConfigAnnotation, defaultConfigName).
+			Annotation(kueue.PreemptionConfigAnnotation, defaultConfigName).
 			Obj(),
 	}
 
@@ -186,7 +186,7 @@ func TestConfigurablePreemptions(t *testing.T) {
 					Cohort("all").
 					ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
 						Resource(corev1.ResourceCPU, "2").Obj()).
-					Annotation(kueue.AlphaPreemptionConfigAnnotation, "unknown-name").
+					Annotation(kueue.PreemptionConfigAnnotation, "unknown-name").
 					Obj(),
 			},
 			config: baseConfig,

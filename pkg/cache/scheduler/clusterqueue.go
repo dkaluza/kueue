@@ -182,7 +182,7 @@ func (c *clusterQueue) updateClusterQueue(
 
 	c.AdmissionChecks = admissioncheck.NewAdmissionChecks(in)
 	if in.Annotations != nil {
-		if val, ok := in.Annotations[kueue.AlphaPreemptionConfigAnnotation]; ok {
+		if val, ok := in.Annotations[kueue.PreemptionConfigAnnotation]; ok {
 			c.PreemptionAnnotation = ptr.To(val)
 		}
 	}

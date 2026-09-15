@@ -96,7 +96,7 @@ var _ = ginkgo.Describe("Configuration Preemptions", ginkgo.Label("feature:confi
 				Resource(corev1.ResourceCPU, "2").
 				Resource(corev1.ResourceMemory, "2G").
 				Obj()).
-			Annotation(kueue.AlphaPreemptionConfigAnnotation, preemptionConfigName).
+			Annotation(kueue.PreemptionConfigAnnotation, preemptionConfigName).
 			Obj()
 		util.CreateClusterQueuesAndWaitForActive(ctx, k8sClient, cq)
 
