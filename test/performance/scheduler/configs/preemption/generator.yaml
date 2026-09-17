@@ -1,0 +1,26 @@
+# Preemption Performance Test Configuration (Classical Preemption)
+cohorts:
+  - className: cohort
+    count: 1
+    queuesSets:
+    - className: cq
+      count: 1
+      nominalQuota: 10
+      reclaimWithinCohort: Any
+      withinClusterQueue: LowerPriority
+      workloadsSets:
+      - count: 10
+        creationIntervalMs: 50
+        workloads:
+        - className: low-prio
+          runtimeMs: 10000
+          priority: 10
+          request: 1
+      - count: 5
+        initialDelayMs: 2000
+        creationIntervalMs: 100
+        workloads:
+        - className: high-prio
+          runtimeMs: 2000
+          priority: 100
+          request: 1

@@ -774,6 +774,59 @@ run-tas-performance-scheduler-in-cluster: envtest performance-scheduler-runner
 		--enableTAS=true \
 		--qps=1000 --burst=2000 --timeout=25m $(SCALABILITY_SCRAPE_ARGS)
 
+##@ Scheduler Performance Testing with Preemption
+
+SCALABILITY_PREEMPTION_GENERATOR_CONFIG ?= $(PROJECT_DIR)/test/performance/scheduler/configs/preemption/generator.yaml
+SCALABILITY_PREEMPTION_RANGE_FILE ?= $(PROJECT_DIR)/test/performance/scheduler/configs/preemption/rangespec.yaml
+
+.PHONY: run-preemption-performance-scheduler
+run-preemption-performance-scheduler: envtest performance-scheduler-runner minimalkueue
+	mkdir -p "$(ARTIFACTS)/$@"
+	KUBEBUILDER_ASSETS="$(KUBEBUILDER_ASSETS)" \
+	$(SCALABILITY_RUNNER) \
+		--o "$(ARTIFACTS)/$@" \
+		--crds=$(PROJECT_DIR)/config/components/crd/bases \
+		--generatorConfig=$(SCALABILITY_PREEMPTION_GENERATOR_CONFIG) \
+		--minimalKueue=$(MINIMALKUEUE_RUNNER) \
+		--timeout=10m $(SCALABILITY_EXTRA_ARGS) $(SCALABILITY_SCRAPE_ARGS)
+
+.PHONY: test-preemption-performance-scheduler-once
+test-preemption-performance-scheduler-once: gotestsum run-preemption-performance-scheduler
+	$(GOTESTSUM) --junitfile $(ARTIFACTS)/junit.xml -- $(GO_TEST_FLAGS) ./test/performance/scheduler/checker  \
+		--summary=$(ARTIFACTS)/run-preemption-performance-scheduler/summary.yaml \
+		--cmdStats=$(ARTIFACTS)/run-preemption-performance-scheduler/minimalkueue.stats.yaml \
+		--range=$(SCALABILITY_PREEMPTION_RANGE_FILE)
+
+.PHONY: test-preemption-performance-scheduler
+test-preemption-performance-scheduler:
+	ARTIFACTS="$(ARTIFACTS)/$@" ./hack/testing/performance-test.sh $(PERFORMANCE_RETRY_COUNT) test-preemption-performance-scheduler-once
+
+SCALABILITY_CONFIGURABLE_PREEMPTION_GENERATOR_CONFIG ?= $(PROJECT_DIR)/test/performance/scheduler/configs/configurable-preemption/generator.yaml
+SCALABILITY_CONFIGURABLE_PREEMPTION_RANGE_FILE ?= $(PROJECT_DIR)/test/performance/scheduler/configs/configurable-preemption/rangespec.yaml
+
+.PHONY: run-configurable-preemption-performance-scheduler
+run-configurable-preemption-performance-scheduler: envtest performance-scheduler-runner minimalkueue
+	mkdir -p "$(ARTIFACTS)/$@"
+	KUBEBUILDER_ASSETS="$(KUBEBUILDER_ASSETS)" \
+	$(SCALABILITY_RUNNER) \
+		--o "$(ARTIFACTS)/$@" \
+		--crds=$(PROJECT_DIR)/config/components/crd/bases \
+		--generatorConfig=$(SCALABILITY_CONFIGURABLE_PREEMPTION_GENERATOR_CONFIG) \
+		--minimalKueue=$(MINIMALKUEUE_RUNNER) \
+		--featureGates="ConfigurablePreemption=true" \
+		--timeout=10m $(SCALABILITY_EXTRA_ARGS) $(SCALABILITY_SCRAPE_ARGS)
+
+.PHONY: test-configurable-preemption-performance-scheduler-once
+test-configurable-preemption-performance-scheduler-once: gotestsum run-configurable-preemption-performance-scheduler
+	$(GOTESTSUM) --junitfile $(ARTIFACTS)/junit.xml -- $(GO_TEST_FLAGS) ./test/performance/scheduler/checker  \
+		--summary=$(ARTIFACTS)/run-configurable-preemption-performance-scheduler/summary.yaml \
+		--cmdStats=$(ARTIFACTS)/run-configurable-preemption-performance-scheduler/minimalkueue.stats.yaml \
+		--range=$(SCALABILITY_CONFIGURABLE_PREEMPTION_RANGE_FILE)
+
+.PHONY: test-configurable-preemption-performance-scheduler
+test-configurable-preemption-performance-scheduler:
+	ARTIFACTS="$(ARTIFACTS)/$@" ./hack/testing/performance-test.sh $(PERFORMANCE_RETRY_COUNT) test-configurable-preemption-performance-scheduler-once
+
 ##@ Scheduler Performance Testing - Large Scale
 
 SCALABILITY_LARGE_SCALE_GENERATOR_CONFIG ?= $(PROJECT_DIR)/test/performance/scheduler/configs/large-scale/generator.yaml
