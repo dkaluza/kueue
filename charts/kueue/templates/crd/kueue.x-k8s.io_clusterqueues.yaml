@@ -1107,6 +1107,7 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 preemption:
+                  default: {}
                   description: preemption defines the preemption policies.
                   properties:
                     borrowWithinCohort:

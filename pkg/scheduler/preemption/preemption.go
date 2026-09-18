@@ -155,38 +155,18 @@ func (p *Preemptor) GetTargets(ctx context.Context, wl workload.Info, assignment
 }
 
 func (p *Preemptor) getTargets(preemptionCtx *preemptionCtx) []*Target {
-	var targets []*Target
 	if p.enableFairSharing {
-		targets = p.fairPreemptions(preemptionCtx, p.fsStrategies)
-	} else {
-		targets = p.classicalPreemptions(preemptionCtx)
+		return p.fairPreemptions(preemptionCtx, p.fsStrategies)
 	}
-
-	if features.Enabled(features.ConfigurablePreemption) {
-		if preemptionCtx.preemptorCQ.PreemptionAnnotation != nil {
-			targetsSet := sets.New[workload.Reference]()
-			for _, target := range targets {
-				targetsSet.Insert(workload.Key(target.WorkloadInfo.Obj))
-			}
-			configurableTargets := p.configurablePreemptions(preemptionCtx)
-			for _, configurableTarget := range configurableTargets {
-				key := workload.Key(configurableTarget.WorkloadInfo.Obj)
-				if !targetsSet.Has(key) {
-					targetsSet.Insert(key)
-					targets = append(targets, configurableTarget)
-				}
-			}
-		}
-	}
-
-	return targets
+	return p.classicalPreemptions(preemptionCtx)
 }
 
 var HumanReadablePreemptionReasons = map[string]string{
-	kueue.InClusterQueueReason:                "prioritization in the ClusterQueue",
-	kueue.InCohortReclamationReason:           "reclamation within the cohort",
-	kueue.InCohortFairSharingReason:           "Fair Sharing within the cohort",
-	kueue.InCohortReclaimWhileBorrowingReason: "reclamation within the cohort while borrowing",
+	kueue.InClusterQueueReason:                    "prioritization in the ClusterQueue",
+	kueue.InCohortReclamationReason:               "reclamation within the cohort",
+	kueue.InCohortFairSharingReason:               "Fair Sharing within the cohort",
+	kueue.InCohortReclaimWhileBorrowingReason:     "reclamation within the cohort while borrowing",
+	preemptioncommon.ConfigurablePreemptionReason: "the configured preemption rules",
 	"": "UNKNOWN",
 }
 
@@ -311,7 +291,11 @@ func (p *Preemptor) classicalPreemptions(preemptionCtx *preemptionCtx) []*Target
 		Requests:          preemptionCtx.workloadUsage.Quota.Assigned,
 		WorkloadOrdering:  p.workloadOrdering,
 	}
-	candidatesGenerator := classical.NewCandidateIterator(hierarchicalReclaimCtx, p.enabledAfs, preemptionCtx.frsNeedPreemption, preemptionCtx.snapshot, p.clock, preemptioncommon.CandidatesOrdering)
+	// TODO(#13396): the classical algorithm stops merging the configurable candidates,
+	// here and in the tiered phase below, once ConfigurablePreemption covers it and the
+	// two become mutually exclusive.
+	configurableCandidates := p.configurableCandidates(preemptionCtx)
+	candidatesGenerator := classical.NewCandidateIterator(hierarchicalReclaimCtx, p.enabledAfs, preemptionCtx.frsNeedPreemption, preemptionCtx.snapshot, p.clock, preemptioncommon.CandidatesOrdering, configurableCandidates.Always)
 	var attemptPossibleOpts []preemptionAttemptOpts
 	borrowWithinCohortForbidden, _ := classical.IsBorrowingWithinCohortForbidden(preemptionCtx.preemptorCQ)
 	// We have three types of candidates:
@@ -353,6 +337,14 @@ func (p *Preemptor) classicalPreemptions(preemptionCtx *preemptionCtx) []*Target
 				restoreSnapshot(preemptionCtx.snapshot, targets)
 				return targets
 			}
+		}
+		// The classical candidates, including the ones of the Always tier, are not
+		// enough. Extending them with the conditional ConfigurablePreemption tiers.
+		fits, targets := preemptTieredCandidates(preemptionCtx, targets, configurableCandidates, classicalFitChecker(preemptionCtx, attemptOpts.borrowing))
+		if fits {
+			targets = fillBackWorkloads(preemptionCtx, targets, attemptOpts.borrowing)
+			restoreSnapshot(preemptionCtx.snapshot, targets)
+			return targets
 		}
 		restoreSnapshot(preemptionCtx.snapshot, targets)
 	}
@@ -513,17 +505,25 @@ func runSecondFsStrategy(retryCandidates []*workload.Info, preemptionCtx *preemp
 
 func (p *Preemptor) fairPreemptions(preemptionCtx *preemptionCtx, strategies []fairsharing.Strategy) []*Target {
 	candidates := p.findCandidates(preemptionCtx.log, preemptionCtx.preemptor.Obj, preemptionCtx.preemptorCQ, preemptionCtx.frsNeedPreemption)
-	if len(candidates) == 0 {
+	// TODO(#13396): Fair Sharing stops interleaving the configurable tiers with its own
+	// strategies once ConfigurablePreemption covers it and the two become mutually
+	// exclusive.
+	configurableCandidates := p.configurableCandidates(preemptionCtx)
+	if len(candidates) == 0 && configurableCandidates.Empty() {
 		return nil
 	}
-	slices.SortFunc(candidates, func(a, b *workload.Info) int {
-		return preemptioncommon.CandidatesOrdering(preemptionCtx.log, p.enabledAfs, a, b, preemptionCtx.preemptorCQ.Name, p.clock.Now())
-	})
+	slices.SortFunc(candidates, p.candidatesOrdering(preemptionCtx))
 	if logV := preemptionCtx.log.V(5); logV.Enabled() {
 		logV.Info(
 			"Simulating fair preemption",
 			"candidates",
 			workload.References(candidates),
+			"alwaysCandidates",
+			workload.References(configurableCandidates.Always),
+			"insufficientQuotaCandidates",
+			workload.References(configurableCandidates.InsufficientQuota),
+			"topologyBlockedCandidates",
+			workload.References(configurableCandidates.QuotaFeasibleButTopologyBlocked),
 			"resourcesRequiringPreemption",
 			preemptionCtx.frsNeedPreemption.UnsortedList(),
 			"preemptingWorkload",
@@ -533,8 +533,16 @@ func (p *Preemptor) fairPreemptions(preemptionCtx *preemptionCtx, strategies []f
 
 	// DRS values must include incoming workload.
 	revertSimulation := preemptionCtx.preemptorCQ.SimulateUsageAddition(preemptionCtx.workloadUsage)
+	check := fairSharingFitChecker(preemptionCtx)
 
 	fits, targets, retryCandidates := runFirstFsStrategy(preemptionCtx, candidates, strategies[0])
+	if !fits {
+		// The candidates of the Always tier are preempted regardless of the Fair
+		// Sharing rules, as they are explicitly selected by the PreemptionConfig.
+		// They are preferred over rule S2-b, which is a last resort for the
+		// candidates the first strategy rejected.
+		fits, targets = preemptCandidates(preemptionCtx, targets, configurableCandidates.Always, check.fits)
+	}
 	if !fits && len(strategies) > 1 {
 		if logV := preemptionCtx.log.V(6); logV.Enabled() {
 			logV.Info("First fair sharing strategy failed, trying second strategy",
@@ -542,7 +550,12 @@ func (p *Preemptor) fairPreemptions(preemptionCtx *preemptionCtx, strategies []f
 				"targets", logging.GetObjectReferences(targets),
 				"retryCandidates", workload.References(retryCandidates))
 		}
-		fits, targets = runSecondFsStrategy(retryCandidates, preemptionCtx, targets)
+		fits, targets = runSecondFsStrategy(remainingCandidates(retryCandidates, targets), preemptionCtx, targets)
+	}
+	if !fits {
+		// All the Fair Sharing strategies failed: extend the candidates with the
+		// conditional ConfigurablePreemption tiers.
+		fits, targets = preemptTieredCandidates(preemptionCtx, targets, configurableCandidates, check)
 	}
 
 	revertSimulation()
@@ -564,6 +577,83 @@ func (p *Preemptor) fairPreemptions(preemptionCtx *preemptionCtx, strategies []f
 			"targets", logging.GetObjectReferences(targets))
 	}
 	return targets
+}
+
+// preemptedKeys returns the keys of the workloads already selected as targets.
+func preemptedKeys(targets []*Target) sets.Set[workload.Reference] {
+	preempted := sets.New[workload.Reference]()
+	for _, target := range targets {
+		preempted.Insert(workload.Key(target.WorkloadInfo.Obj))
+	}
+	return preempted
+}
+
+// remainingCandidates returns the candidates that are not targets yet, as a workload
+// can't be preempted twice.
+// TODO(#13396): only needed because the Always tier preempts between the two Fair
+// Sharing strategies; remove once ConfigurablePreemption covers Fair Sharing and the two
+// become mutually exclusive.
+func remainingCandidates(candidates []*workload.Info, targets []*Target) []*workload.Info {
+	preempted := preemptedKeys(targets)
+	return slices.DeleteFunc(slices.Clone(candidates), func(candidate *workload.Info) bool {
+		return preempted.Has(workload.Key(candidate.Obj))
+	})
+}
+
+// preemptCandidates appends the candidates selected by the ConfigurablePreemption
+// rules to the targets, in order, until fits returns true. Candidates already selected
+// as targets by the classical or the Fair Sharing algorithm are skipped.
+// The candidates are preempted regardless of the classical or Fair Sharing rules, as
+// they are explicitly selected by the PreemptionConfig, and thus reported with the
+// ConfigurablePreemption reason.
+// TODO(#13396): move to the ConfigurablePreemption algorithm once it covers the
+// classical and Fair Sharing preemption and the three become mutually exclusive.
+func preemptCandidates(preemptionCtx *preemptionCtx, targets []*Target, candidates []*workload.Info, fits func() bool) (bool, []*Target) {
+	preempted := preemptedKeys(targets)
+	for _, candidate := range candidates {
+		if preempted.Has(workload.Key(candidate.Obj)) {
+			continue
+		}
+		preemptionCtx.snapshot.RemoveWorkload(candidate)
+		targets = append(targets, &Target{
+			WorkloadInfo: candidate,
+			Reason:       preemptioncommon.ConfigurablePreemptionReason,
+			WorkloadCq:   preemptionCtx.snapshot.ClusterQueue(candidate.ClusterQueue),
+		})
+		if fits() {
+			return true, targets
+		}
+	}
+	return false, targets
+}
+
+// preemptTieredCandidates extends the targets selected so far with the candidates of
+// the conditional ConfigurablePreemption tiers, which are only used once the candidates
+// of the classical or the Fair Sharing algorithm, along with the ones of the Always
+// tier, are not enough to admit the incoming workload.
+// The InsufficientQuota tier is only used while the workload lacks quota, and the
+// QuotaFeasibleButTopologyBlocked tier only once the quota, including the one freed by
+// the preceding tiers, is sufficient but no topology assignment can be found.
+// TODO(#13396): move to the ConfigurablePreemption algorithm once it covers the
+// classical and Fair Sharing preemption and the three become mutually exclusive.
+func preemptTieredCandidates(preemptionCtx *preemptionCtx, targets []*Target, candidates configurable.TieredCandidates, check fitChecker) (bool, []*Target) {
+	if candidates.ConditionalTiersEmpty() {
+		// The caller only reaches this point when the workload doesn't fit, and there
+		// is no candidate left to free resources.
+		return false, targets
+	}
+	quotaFits := check.quota()
+	if !quotaFits {
+		quotaFits, targets = preemptCandidates(preemptionCtx, targets, candidates.InsufficientQuota, check.quota)
+	}
+	if !quotaFits {
+		return false, targets
+	}
+	topologyFits := check.topology()
+	if !topologyFits {
+		topologyFits, targets = preemptCandidates(preemptionCtx, targets, candidates.QuotaFeasibleButTopologyBlocked, check.topology)
+	}
+	return topologyFits, targets
 }
 
 func flavorResourcesNeedPreemption(assignment flavorassigner.Assignment) sets.Set[resources.FlavorResource] {
@@ -641,12 +731,22 @@ func cqIsBorrowing(cq *schdcache.ClusterQueueSnapshot, frsNeedPreemption sets.Se
 	return false
 }
 
-func (p *Preemptor) configurablePreemptions(preemptionCtx *preemptionCtx) []*Target {
+// configurableCandidates returns the candidates selected by the rules of the
+// PreemptionConfig referenced by the preemptor's ClusterQueue, grouped by the tier of
+// the rule that selected them, or no candidate if the ConfigurablePreemption feature is
+// disabled or the ClusterQueue doesn't reference a PreemptionConfig.
+// The candidates of the Always tier are merged with the candidates of the classical or
+// the Fair Sharing algorithm, which selects the final targets. The candidates of the
+// remaining tiers are only used if those are not enough to admit the preemptor.
+func (p *Preemptor) configurableCandidates(preemptionCtx *preemptionCtx) configurable.TieredCandidates {
+	if !features.Enabled(features.ConfigurablePreemption) || preemptionCtx.preemptorCQ.PreemptionAnnotation == nil {
+		return configurable.TieredCandidates{}
+	}
 	preemptionConfig := &kueue.PreemptionConfig{}
 	preemptionConfigName := *preemptionCtx.preemptorCQ.PreemptionAnnotation
 	if err := p.client.Get(preemptionCtx.ctx, client.ObjectKey{Name: preemptionConfigName}, preemptionConfig); err != nil {
 		preemptionCtx.log.Error(err, "Failed to get PreemptionConfig", "preemptionConfigName", preemptionConfigName)
-		return nil
+		return configurable.TieredCandidates{}
 	}
 
 	preemptionEvaluator := configurable.NewPreemptionEvaluator(preemptionCtx.ctx, preemptionCtx.log, preemptionCtx.clock, *preemptionConfig, p.client)
@@ -654,33 +754,33 @@ func (p *Preemptor) configurablePreemptions(preemptionCtx *preemptionCtx) []*Tar
 	candidates, err := preemptionEvaluator.Candidates(preemptionCtx.snapshot, &preemptionCtx.preemptor, preemptionCtx.frsNeedPreemption)
 	if err != nil {
 		preemptionCtx.log.Error(err, "Failed to get candidates for preemption", "preemptionConfigName", preemptionConfigName)
-		return nil
+		return configurable.TieredCandidates{}
 	}
-
-	var targets []*Target
-	for _, candidate := range candidates {
-		preemptionCtx.snapshot.RemoveWorkload(candidate)
-		targets = append(targets, &Target{
-			WorkloadInfo: candidate,
-			// TODO: configurable_preemptions_test.go should be updated once reason is changed.
-			Reason:     "ConfigurablePreemption",
-			WorkloadCq: preemptionCtx.snapshot.ClusterQueue(candidate.ClusterQueue),
-		})
-
-		if workloadFits(preemptionCtx, true) {
-			restoreSnapshot(preemptionCtx.snapshot, targets)
-			return targets
-		}
+	for _, tier := range [][]*workload.Info{candidates.Always, candidates.InsufficientQuota, candidates.QuotaFeasibleButTopologyBlocked} {
+		slices.SortFunc(tier, p.candidatesOrdering(preemptionCtx))
 	}
-
-	restoreSnapshot(preemptionCtx.snapshot, targets)
-	return nil
+	return candidates
 }
 
-// workloadFits determines if the workload requests would fit given the
-// requestable resources and simulated usage of the ClusterQueue and its cohort,
-// if it belongs to one.
+// candidatesOrdering returns the function ordering the candidates of a preemption,
+// from the most to the least preferred one.
+func (p *Preemptor) candidatesOrdering(preemptionCtx *preemptionCtx) func(a, b *workload.Info) int {
+	return func(a, b *workload.Info) int {
+		return preemptioncommon.CandidatesOrdering(preemptionCtx.log, p.enabledAfs, a, b, preemptionCtx.preemptorCQ.Name, p.clock.Now())
+	}
+}
+
+// workloadFits determines if the workload can be admitted given the simulated usage
+// of the snapshot: the quota must be available in the ClusterQueue and its cohort, if
+// it belongs to one, and a topology assignment must be found if the workload requires
+// one.
 func workloadFits(preemptionCtx *preemptionCtx, allowBorrowing bool) bool {
+	return workloadQuotaFits(preemptionCtx, allowBorrowing) && workloadTopologyFits(preemptionCtx)
+}
+
+// workloadQuotaFits determines if the quota requested by the workload is available in
+// the ClusterQueue and its cohort, if it belongs to one.
+func workloadQuotaFits(preemptionCtx *preemptionCtx, allowBorrowing bool) bool {
 	for fr, v := range preemptionCtx.workloadUsage.Quota.Assigned {
 		if !allowBorrowing && preemptionCtx.preemptorCQ.BorrowingWith(fr, v) {
 			return false
@@ -689,12 +789,66 @@ func workloadFits(preemptionCtx *preemptionCtx, allowBorrowing bool) bool {
 			return false
 		}
 	}
+	return true
+}
+
+// workloadTopologyFits determines if a topology assignment can be found for the
+// workload, given the simulated usage of the snapshot. It always succeeds if the
+// workload has no topology requests.
+func workloadTopologyFits(preemptionCtx *preemptionCtx) bool {
 	tasResult := preemptionCtx.preemptorCQ.FindTopologyAssignmentsForWorkload(
 		preemptionCtx.ctx,
 		preemptionCtx.tasRequests,
 		schdcache.WithWorkload(preemptionCtx.preemptor.Obj),
 	)
 	return tasResult.Failure() == nil
+}
+
+// fitChecker tells whether the incoming workload fits with the current state of the
+// snapshot. It distinguishes a lack of quota from a blocked topology, as the tiers of
+// the ConfigurablePreemption rules are activated by the reason the workload doesn't fit.
+// fits is always the conjunction of quota and topology, which preemptTieredCandidates
+// relies on to know that a failing fits means a failing quota or topology.
+// TODO(#13396): the quota/topology distinction only serves the ConfigurablePreemption
+// tiers; it moves with them once ConfigurablePreemption covers the classical and Fair
+// Sharing preemption and the three become mutually exclusive.
+type fitChecker struct {
+	fits     func() bool
+	quota    func() bool
+	topology func() bool
+}
+
+func newFitChecker(quota, topology func() bool) fitChecker {
+	return fitChecker{
+		fits:     func() bool { return quota() && topology() },
+		quota:    quota,
+		topology: topology,
+	}
+}
+
+func classicalFitChecker(preemptionCtx *preemptionCtx, allowBorrowing bool) fitChecker {
+	return newFitChecker(
+		func() bool { return workloadQuotaFits(preemptionCtx, allowBorrowing) },
+		func() bool { return workloadTopologyFits(preemptionCtx) },
+	)
+}
+
+func fairSharingFitChecker(preemptionCtx *preemptionCtx) fitChecker {
+	// FairSharing adds the usage of the incoming workload at the start of the
+	// processing, so it has to be removed before every check, as
+	// workloadFitsForFairSharing does.
+	withoutSimulatedUsage := func(check func() bool) func() bool {
+		return func() bool {
+			revertSimulation := preemptionCtx.preemptorCQ.SimulateUsageRemoval(preemptionCtx.workloadUsage)
+			res := check()
+			revertSimulation()
+			return res
+		}
+	}
+	return newFitChecker(
+		withoutSimulatedUsage(func() bool { return workloadQuotaFits(preemptionCtx, true) }),
+		withoutSimulatedUsage(func() bool { return workloadTopologyFits(preemptionCtx) }),
+	)
 }
 
 // workloadFitsForFairSharing is a lightweight wrapper around

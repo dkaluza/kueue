@@ -43,6 +43,20 @@ spec:
                 description: Rules to select preemption candidates.
                 items:
                   properties:
+                    activationPolicy:
+                      description: ActivationPolicy determines when this rule is used.
+                      properties:
+                        trigger:
+                          description: Trigger is the condition that activates the
+                            rule.
+                          enum:
+                          - Always
+                          - InsufficientQuota
+                          - QuotaFeasibleButTopologyBlocked
+                          type: string
+                      required:
+                      - trigger
+                      type: object
                     candidates:
                       description: |-
                         Selection rules for workloads that are candidates for preemption.
@@ -278,8 +292,8 @@ spec:
                       x-kubernetes-map-type: atomic
                     name:
                       type: string
-                    trigger:
-                      type: string
+                  required:
+                  - activationPolicy
                   type: object
                 type: array
             type: object

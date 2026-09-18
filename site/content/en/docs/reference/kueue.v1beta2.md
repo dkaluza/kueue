@@ -2152,106 +2152,6 @@ If not specified, no upper bound is enforced.</p>
 </tbody>
 </table>
 
-## `Order`     {#kueue-x-k8s-io-v1beta2-Order}
-    
-
-**Appears in:**
-
-- [PreemptionConfigSpec](#kueue-x-k8s-io-v1beta2-PreemptionConfigSpec)
-
-
-<p>Order specifies a single sorting criterion and direction for ordering preemption candidates.
-Multiple Order criteria are evaluated sequentially as a multi-key comparator chain,
-with ties broken by Workload UID for deterministic ordering.</p>
-
-
-<table class="table">
-<thead><tr><th width="30%">Field</th><th>Description</th></tr></thead>
-<tbody>
-    
-  
-<tr><td><code>orderingField</code> <B>[Required]</B><br/>
-<a href="#kueue-x-k8s-io-v1beta2-OrderingField"><code>OrderingField</code></a>
-</td>
-<td>
-   <p>OrderingField specifies the field to sort preemption candidates by.</p>
-</td>
-</tr>
-<tr><td><code>direction</code><br/>
-<a href="#kueue-x-k8s-io-v1beta2-OrderingDirection"><code>OrderingDirection</code></a>
-</td>
-<td>
-   <p>Direction specifies the sorting direction (Ascending or Descending).
-Defaults to Ascending if not specified.</p>
-</td>
-</tr>
-</tbody>
-</table>
-
-## `OrderingDirection`     {#kueue-x-k8s-io-v1beta2-OrderingDirection}
-    
-(Alias of `string`)
-
-**Appears in:**
-
-- [Order](#kueue-x-k8s-io-v1beta2-Order)
-
-
-<p>OrderingDirection specifies the sort direction for a candidate ordering criterion.
-Possible values are:</p>
-<ul>
-<li>&quot;Ascending&quot;: sort in natural ascending order (default).</li>
-<li>&quot;Descending&quot;: sort in reverse/descending order.</li>
-</ul>
-
-
-
-
-## `OrderingField`     {#kueue-x-k8s-io-v1beta2-OrderingField}
-    
-(Alias of `string`)
-
-**Appears in:**
-
-- [Order](#kueue-x-k8s-io-v1beta2-Order)
-
-
-<p>OrderingField specifies the property of candidate workloads to sort by during preemption evaluation.
-Supported values are:</p>
-<ul>
-<li>
-<p>&quot;Priority&quot;: orders workloads by effective priority (accounting for priority boost if enabled).</p>
-<ul>
-<li>Ascending (default): lowest priority first.</li>
-<li>Descending: highest priority first.</li>
-</ul>
-</li>
-<li>
-<p>&quot;AdmissionTimestamp&quot;: orders workloads by the timestamp when quota was reserved (admitted).</p>
-<ul>
-<li>Ascending (default): oldest admitted workloads first and most recently admitted last.</li>
-<li>Descending: most recently admitted workloads first and oldest admitted last.</li>
-</ul>
-</li>
-<li>
-<p>&quot;IsOtherCQ&quot;: orders workloads based on whether they belong to a different ClusterQueue than the preemptor.</p>
-<ul>
-<li>Ascending (default): workloads from the same ClusterQueue first, followed by other ClusterQueues.</li>
-<li>Descending: workloads from other ClusterQueues first, followed by the same ClusterQueue.</li>
-</ul>
-</li>
-<li>
-<p>&quot;IsOtherCohort&quot;: orders workloads based on whether they belong to a different Cohort than the preemptor.</p>
-<ul>
-<li>Ascending (default): workloads from the same Cohort first, followed by other Cohorts.</li>
-<li>Descending: workloads from other Cohorts first, followed by the same Cohort.</li>
-</ul>
-</li>
-</ul>
-
-
-
-
 ## `Parameter`     {#kueue-x-k8s-io-v1beta2-Parameter}
     
 (Alias of `string`)
@@ -2840,26 +2740,6 @@ Multiple numeric label constraints are joined using logical AND (all must be sat
 If not set does not add any additional candidate filtering.</p>
 </td>
 </tr>
-<tr><td><code>preemptingWorkloadPrioritySelector</code><br/>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#labelselector-v1-meta"><code>k8s.io/apimachinery/pkg/apis/meta/v1.LabelSelector</code></a>
-</td>
-<td>
-   <p>PreemptingWorkloadPrioritySelector specifies a label selector matching labels
-on the preemptor workload's PriorityClass or WorkloadPriorityClass.
-Workloads whose priority class matches the selector can trigger preemption of candidates defined by this selector.
-If not specified or empty, all preemptor priority classes are accepted.</p>
-</td>
-</tr>
-<tr><td><code>candidateWorkloadPrioritySelector</code><br/>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#labelselector-v1-meta"><code>k8s.io/apimachinery/pkg/apis/meta/v1.LabelSelector</code></a>
-</td>
-<td>
-   <p>CandidateWorkloadPrioritySelector specifies a label selector matching labels
-on the candidate workload's PriorityClass or WorkloadPriorityClass.
-Workloads whose priority class matches the selector are permitted as preemption candidates.
-If not specified or empty, all candidate priority classes are accepted.</p>
-</td>
-</tr>
 <tr><td><code>relativeWorkloadPriority</code><br/>
 <a href="#kueue-x-k8s-io-v1beta2-RelativeConstraint"><code>RelativeConstraint</code></a>
 </td>
@@ -2892,20 +2772,6 @@ If nil, no relative priority check is enforced.</p>
 </td>
 <td>
    <p>Rules to select preemption candidates.</p>
-</td>
-</tr>
-<tr><td><code>ordering</code><br/>
-<a href="#kueue-x-k8s-io-v1beta2-Order"><code>[]Order</code></a>
-</td>
-<td>
-   <p>Ordering of preemption candidates evaluated sequentially as a multi-key comparator chain.
-The order is always deterministic, as the Workload UID is used as the final tie-breaker.
-If not set, candidates will be ordered by default like this:</p>
-<ol>
-<li>Priority (Ascending: lowest priority first)</li>
-<li>AdmissionTimestamp (Descending: most recently admitted first, protecting long-running workloads)</li>
-<li>UID (Ascending: deterministic tie-breaker)</li>
-</ol>
 </td>
 </tr>
 </tbody>
@@ -3048,17 +2914,11 @@ Possible values are:</p>
 using this rule.</p>
 </td>
 </tr>
-<tr><td><code>trigger</code> <B>[Required]</B><br/>
-<a href="#kueue-x-k8s-io-v1beta2-PreemptionRuleTrigger"><code>PreemptionRuleTrigger</code></a>
+<tr><td><code>activationPolicy</code> <B>[Required]</B><br/>
+<a href="#kueue-x-k8s-io-v1beta2-PreemptionRuleActivationPolicy"><code>PreemptionRuleActivationPolicy</code></a>
 </td>
 <td>
-   <span class="text-muted">No description provided.</span></td>
-</tr>
-<tr><td><code>minTriggerRequiredDuration</code> <B>[Required]</B><br/>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#duration-v1-meta"><code>k8s.io/apimachinery/pkg/apis/meta/v1.Duration</code></a>
-</td>
-<td>
-   <p>How long the trigger has to occur to start preempting workloads specified by candidates. 0s indicates that preemptions can be started immediately. Default is 0s.</p>
+   <p>ActivationPolicy determines when this rule is used.</p>
 </td>
 </tr>
 <tr><td><code>candidates</code> <B>[Required]</B><br/>
@@ -3072,14 +2932,52 @@ Candidates resulting from multiple selectors are summed into one set. No selecto
 </tbody>
 </table>
 
+## `PreemptionRuleActivationPolicy`     {#kueue-x-k8s-io-v1beta2-PreemptionRuleActivationPolicy}
+    
+
+**Appears in:**
+
+- [PreemptionRule](#kueue-x-k8s-io-v1beta2-PreemptionRule)
+
+
+<p>PreemptionRuleActivationPolicy determines when a preemption rule is used.</p>
+
+
+<table class="table">
+<thead><tr><th width="30%">Field</th><th>Description</th></tr></thead>
+<tbody>
+    
+  
+<tr><td><code>trigger</code> <B>[Required]</B><br/>
+<a href="#kueue-x-k8s-io-v1beta2-PreemptionRuleTrigger"><code>PreemptionRuleTrigger</code></a>
+</td>
+<td>
+   <p>Trigger is the condition that activates the rule.</p>
+</td>
+</tr>
+</tbody>
+</table>
+
 ## `PreemptionRuleTrigger`     {#kueue-x-k8s-io-v1beta2-PreemptionRuleTrigger}
     
 (Alias of `string`)
 
 **Appears in:**
 
-- [PreemptionRule](#kueue-x-k8s-io-v1beta2-PreemptionRule)
+- [PreemptionRuleActivationPolicy](#kueue-x-k8s-io-v1beta2-PreemptionRuleActivationPolicy)
 
+
+<p>PreemptionRuleTrigger determines when the candidates selected by a rule are
+considered for preemption.
+The triggers are organized in tiers: the candidates of a rule are only considered
+once the candidates of the preceding tiers, together with the candidates of the
+classical or Fair Sharing preemption, are not enough to admit the preemptor.
+Possible values are:</p>
+<ul>
+<li>&quot;Always&quot;: the candidates of the rule are always considered.</li>
+<li>&quot;InsufficientQuota&quot;: the candidates of the rule are only considered if there is not enough quota to admit the preemptor.</li>
+<li>&quot;QuotaFeasibleButTopologyBlocked&quot;: the candidates of the rule are only considered if there is enough quota to admit the preemptor, but no topology assignment can be found.</li>
+</ul>
 
 
 

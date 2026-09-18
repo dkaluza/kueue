@@ -20,7 +20,6 @@ package v1beta2
 
 import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
-	kueuev1beta2 "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 )
 
 // PreemptionRuleApplyConfiguration represents a declarative configuration of the PreemptionRule type for use
@@ -30,7 +29,8 @@ type PreemptionRuleApplyConfiguration struct {
 	// Label Selector indicating which workloads can trigger preemptions
 	// using this rule.
 	MatchingPreemptorWorkloads *v1.LabelSelectorApplyConfiguration `json:"matchingPreemptorWorkloads,omitempty"`
-	Trigger                    *kueuev1beta2.PreemptionRuleTrigger `json:"trigger,omitempty"`
+	// ActivationPolicy determines when this rule is used.
+	ActivationPolicy *PreemptionRuleActivationPolicyApplyConfiguration `json:"activationPolicy,omitempty"`
 	// Selection rules for workloads that are candidates for preemption.
 	// Candidates resulting from multiple selectors are summed into one set. No selectors result in empty candidate set, thereby disallowing any preemptions with this rule.
 	Candidates []PreemptionCandidateSelectorApplyConfiguration `json:"candidates,omitempty"`
@@ -58,11 +58,11 @@ func (b *PreemptionRuleApplyConfiguration) WithMatchingPreemptorWorkloads(value 
 	return b
 }
 
-// WithTrigger sets the Trigger field in the declarative configuration to the given value
+// WithActivationPolicy sets the ActivationPolicy field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Trigger field is set to the value of the last call.
-func (b *PreemptionRuleApplyConfiguration) WithTrigger(value kueuev1beta2.PreemptionRuleTrigger) *PreemptionRuleApplyConfiguration {
-	b.Trigger = &value
+// If called multiple times, the ActivationPolicy field is set to the value of the last call.
+func (b *PreemptionRuleApplyConfiguration) WithActivationPolicy(value *PreemptionRuleActivationPolicyApplyConfiguration) *PreemptionRuleApplyConfiguration {
+	b.ActivationPolicy = value
 	return b
 }
 

@@ -98,13 +98,45 @@ type PreemptionConfigSpec struct {
 	Rules []PreemptionRule `json:"rules,omitempty"`
 }
 
+// PreemptionRuleTrigger determines when the candidates selected by a rule are
+// considered for preemption.
+// The triggers are organized in tiers: the candidates of a rule are only considered
+// once the candidates of the preceding tiers, together with the candidates of the
+// classical or Fair Sharing preemption, are not enough to admit the preemptor.
+// Possible values are:
+// - "Always": the candidates of the rule are always considered.
+// - "InsufficientQuota": the candidates of the rule are only considered if there is not enough quota to admit the preemptor.
+// - "QuotaFeasibleButTopologyBlocked": the candidates of the rule are only considered if there is enough quota to admit the preemptor, but no topology assignment can be found.
+//
+// +kubebuilder:validation:Enum=Always;InsufficientQuota;QuotaFeasibleButTopologyBlocked
 type PreemptionRuleTrigger string
 
 const (
-	InsufficientQuota    PreemptionRuleTrigger = "InsufficientQuota"
-	QuotaReclaimRequired PreemptionRuleTrigger = "QuotaReclaimRequired"
-	InsufficientTopology PreemptionRuleTrigger = "InsufficientTopology"
+	// Always indicates that the candidates selected by the rule are always
+	// considered, along with the candidates of the classical or Fair Sharing
+	// preemption.
+	Always PreemptionRuleTrigger = "Always"
+
+	// InsufficientQuota indicates that the candidates selected by the rule are only
+	// considered if there is not enough quota to admit the preemptor once the
+	// candidates of the Always tier, along with the candidates of the classical or
+	// Fair Sharing preemption, have been preempted.
+	InsufficientQuota PreemptionRuleTrigger = "InsufficientQuota"
+
+	// QuotaFeasibleButTopologyBlocked indicates that the candidates selected by the
+	// rule are only considered if there is enough quota to admit the preemptor,
+	// accounting for the quota freed by the preceding tiers, but no topology
+	// assignment can be found for the preemptor.
+	QuotaFeasibleButTopologyBlocked PreemptionRuleTrigger = "QuotaFeasibleButTopologyBlocked"
 )
+
+// PreemptionRuleActivationPolicy determines when a preemption rule is used.
+type PreemptionRuleActivationPolicy struct {
+	// Trigger is the condition that activates the rule.
+	//
+	// +kubebuilder:validation:Required
+	Trigger PreemptionRuleTrigger `json:"trigger"`
+}
 
 type PreemptionRule struct {
 	Name string `json:"name,omitempty"`
@@ -113,7 +145,10 @@ type PreemptionRule struct {
 	// using this rule.
 	MatchingPreemptorWorkloads metav1.LabelSelector `json:"matchingPreemptorWorkloads,omitempty"`
 
-	Trigger PreemptionRuleTrigger `json:"trigger,omitempty"`
+	// ActivationPolicy determines when this rule is used.
+	//
+	// +kubebuilder:validation:Required
+	ActivationPolicy PreemptionRuleActivationPolicy `json:"activationPolicy"`
 
 	// Selection rules for workloads that are candidates for preemption.
 	// Candidates resulting from multiple selectors are summed into one set. No selectors result in empty candidate set, thereby disallowing any preemptions with this rule.

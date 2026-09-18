@@ -162,29 +162,6 @@ func (c *ClusterQueueSnapshot) BorrowingWith(fr resources.FlavorResource, val re
 	return c.QuotaFor(fr).Nominal.Cmp(c.ResourceNode.Usage[fr].Add(val)) < 0
 }
 
-// IsQuotaReclaimableFromBorrowers returns true if the workload cannot fit in the currently available quota,
-// but would fit within the ClusterQueue's nominal quota that is currently lent to borrowing workloads in the cohort.
-func (c *ClusterQueueSnapshot) IsQuotaReclaimableFromBorrowers(usage workload.Usage) bool {
-	if !c.HasParent() {
-		return false
-	}
-	reclaimNeeded := false
-	for fr, q := range usage.Quota.Assigned {
-		// If Usage + q > Nominal, the workload exceeds this ClusterQueue's nominal quota,
-		// meaning it would need to borrow rather than reclaiming its own quota.
-		if c.BorrowingWith(fr, q) {
-			return false
-		}
-		// If the workload fits within nominal quota (!BorrowingWith), but currently available
-		// capacity is less than q, part of this ClusterQueue's nominal quota is currently
-		// lent to borrowing workloads in the cohort and must be reclaimed.
-		if c.Available(fr).Cmp(q) < 0 {
-			reclaimNeeded = true
-		}
-	}
-	return reclaimNeeded
-}
-
 // Available returns the current capacity available, before preempting
 // any workloads. Includes local capacity and capacity borrowed from
 // Cohort. When the ClusterQueue/Cohort is in debt, Available

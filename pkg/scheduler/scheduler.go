@@ -427,20 +427,6 @@ func (s *Scheduler) processEntry(
 		return
 	}
 
-	if features.Enabled(features.ConfigurablePreemption) {
-		if fitsCheck == schdcache.FitsCheckNoQuota {
-			// If the CQ or Cohort does not have enough unused quota.
-			e.insufficientQuota = true
-			if cq.IsQuotaReclaimableFromBorrowers(usage) {
-				// If reclaiming the CQ's nominal quota from cohort borrowers would be sufficient to admit the workload.
-				e.quotaReclaimRequired = true
-			}
-		} else if fitsCheck == schdcache.FitsCheckNoTAS {
-			// If quota is available, but the assigned TAS topology domain(s) do not have enough remaining capacity.
-			e.insufficientTopology = true
-		}
-	}
-
 	if mode == flavorassigner.NoFit {
 		e.requeueReason = qcache.RequeueReasonNoFit
 		log.V(3).Info("Skipping workload as FlavorAssigner assigned NoFit mode")
@@ -655,9 +641,6 @@ type entry struct {
 	clusterQueueSnapshot *schdcache.ClusterQueueSnapshot
 	quotaReservedReason  string
 	skipStatusUpdate     bool
-	insufficientTopology bool
-	insufficientQuota    bool
-	quotaReclaimRequired bool
 }
 
 func (e *entry) assignmentUsage(log logr.Logger) workload.Usage {
