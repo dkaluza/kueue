@@ -253,7 +253,7 @@ var _ = ginkgo.Describe("Configuration Preemptions", ginkgo.Label("feature:confi
 			util.ExpectAllPodsInNamespaceDeleted(ctx, k8sClient, ns)
 		})
 
-		ginkgo.It("Should reschedule running workload which and schedule incoming", func() {
+		ginkgo.It("Should reschedule running workload and schedule incoming", func() {
 			defragPreemptionConfigName := "defrag-preemption-config"
 			preemptionConfig = kueue.PreemptionConfig{
 				ObjectMeta: metav1.ObjectMeta{
