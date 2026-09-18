@@ -61,15 +61,6 @@ spec:
               type: object
             spec:
               properties:
-                ordering:
-                  description: |-
-                    Ordering of the preemption candidates.
-                    The order will be always deterministic, as UID
-                    of the workloads is used to break the ties
-                    If not set workloads will be just ordered by UID.
-                  items:
-                    type: string
-                  type: array
                 rules:
                   description: Rules to select preemption candidates.
                   items:
@@ -81,12 +72,10 @@ spec:
                         items:
                           description: PreemptionCandidateSelector defines the selection criteria for workloads that are candidates for preemption.
                           properties:
-                            candidateWorkloadPrioritySelector:
+                            labelSelector:
                               description: |-
-                                CandidateWorkloadPrioritySelector specifies a label selector matching labels
-                                on the candidate workload's PriorityClass or WorkloadPriorityClass.
-                                Workloads whose priority class matches the selector are permitted as preemption candidates.
-                                If not specified or empty, all candidate priority classes are accepted.
+                                LabelSelector defines label selector constraints on candidate Workloads.
+                                Accepts all if not set.
                               properties:
                                 matchExpressions:
                                   description: matchExpressions is a list of label selector requirements. The requirements are ANDed.
@@ -182,54 +171,6 @@ spec:
                                   - key
                                 type: object
                               type: array
-                            preemptingWorkloadPrioritySelector:
-                              description: |-
-                                PreemptingWorkloadPrioritySelector specifies a label selector matching labels
-                                on the preemptor workload's PriorityClass or WorkloadPriorityClass.
-                                Workloads whose priority class matches the selector can trigger preemption of candidates defined by this selector.
-                                If not specified or empty, all preemptor priority classes are accepted.
-                              properties:
-                                matchExpressions:
-                                  description: matchExpressions is a list of label selector requirements. The requirements are ANDed.
-                                  items:
-                                    description: |-
-                                      A label selector requirement is a selector that contains values, a key, and an operator that
-                                      relates the key and values.
-                                    properties:
-                                      key:
-                                        description: key is the label key that the selector applies to.
-                                        type: string
-                                      operator:
-                                        description: |-
-                                          operator represents a key's relationship to a set of values.
-                                          Valid operators are In, NotIn, Exists and DoesNotExist.
-                                        type: string
-                                      values:
-                                        description: |-
-                                          values is an array of string values. If the operator is In or NotIn,
-                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                          the values array must be empty. This array is replaced during a strategic
-                                          merge patch.
-                                        items:
-                                          type: string
-                                        type: array
-                                        x-kubernetes-list-type: atomic
-                                    required:
-                                      - key
-                                      - operator
-                                    type: object
-                                  type: array
-                                  x-kubernetes-list-type: atomic
-                                matchLabels:
-                                  additionalProperties:
-                                    type: string
-                                  description: |-
-                                    matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                                    map is equivalent to an element of matchExpressions, whose key field is "key", the
-                                    operator is "In", and the values array contains only "value". The requirements are ANDed.
-                                  type: object
-                              type: object
-                              x-kubernetes-map-type: atomic
                             relationRequirement:
                               description: RelationRequirement specifies the queue or cohort relation boundary to the preemptor workload.
                               enum:
@@ -301,9 +242,6 @@ spec:
                             type: object
                         type: object
                         x-kubernetes-map-type: atomic
-                      minTriggerRequiredDuration:
-                        description: How long the trigger has to occur to start preempting workloads specified by candidates. 0s indicates that preemptions can be started immediately. Default is 0s.
-                        type: string
                       name:
                         type: string
                       trigger:
