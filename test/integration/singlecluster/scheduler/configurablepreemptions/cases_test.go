@@ -184,8 +184,6 @@ var _ = ginkgo.Describe("ConfigurablePreemptions", ginkgo.Label("feature:configu
 			wlAHostnameAfterReschedule := nodesA[0]
 
 			gomega.Expect(wlAHostnameAfterReschedule).ShouldNot(gomega.Equal(wlAHostnameBeforeReschedule))
-
-			// TODO: add third job for the lq-a with 2 units of extra resource, it should be blocked.
 		})
 	})
 })
