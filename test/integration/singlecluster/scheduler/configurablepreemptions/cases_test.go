@@ -184,6 +184,9 @@ var _ = ginkgo.Describe("ConfigurablePreemptions", ginkgo.Label("feature:configu
 			wlAHostnameAfterReschedule := nodesA[0]
 
 			gomega.Expect(wlAHostnameAfterReschedule).ShouldNot(gomega.Equal(wlAHostnameBeforeReschedule))
+
+			wlC := createWorkload("lq-a", "2", map[string]string{corev1.LabelHostname: wlAHostnameBeforeReschedule})
+			util.ExpectWorkloadsToBePending(ctx, k8sClient, wlC)
 		})
 	})
 })
