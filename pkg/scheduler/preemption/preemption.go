@@ -85,8 +85,6 @@ type preemptionCtx struct {
 	workloadUsage     workload.Usage
 	tasRequests       schdcache.WorkloadTASRequests
 	frsNeedPreemption sets.Set[resources.FlavorResource]
-	// candidatesOrdering orders candidates from most to least preferred.
-	candidatesOrdering func(a, b *workload.Info) int
 	// configurableEvaluator selects the candidates of the PreemptionConfig referenced
 	// by the preemptor's ClusterQueue, one trigger at a time. It is nil when the
 	// ConfigurablePreemption feature is disabled, when the ClusterQueue references no
@@ -164,7 +162,6 @@ func (p *Preemptor) GetTargets(ctx context.Context, wl workload.Info, assignment
 }
 
 func (p *Preemptor) getTargets(preemptionCtx *preemptionCtx) []*Target {
-	preemptionCtx.candidatesOrdering = p.candidatesOrdering(preemptionCtx)
 	if features.Enabled(features.ConfigurablePreemption) {
 		// Resolved once per attempt: both algorithms evaluate several triggers, and the
 		// PreemptionConfig must not be re-read for each of them.
@@ -360,7 +357,7 @@ func (p *Preemptor) classicalPreemptions(preemptionCtx *preemptionCtx) []*Target
 			}
 		}
 		if features.Enabled(features.ConfigurablePreemption) {
-			fits, configurableTargets := mergeConfigurableCandidatesWithFitCheck(preemptionCtx, attemptOpts.borrowing)
+			fits, configurableTargets := mergeConfigurableCandidatesWithFitCheck(preemptionCtx, p.candidatesOrdering(preemptionCtx), attemptOpts.borrowing)
 			targets = append(targets, configurableTargets...)
 			if fits {
 				targets = fillBackWorkloads(preemptionCtx, targets, attemptOpts.borrowing)
@@ -570,7 +567,7 @@ func (p *Preemptor) fairPreemptions(preemptionCtx *preemptionCtx, strategies []f
 		// configuration selects them explicitly, so they are only considered once the
 		// strategies failed to admit the workload.
 		var configurableTargets []*Target
-		fits, configurableTargets = mergeConfigurableCandidatesWithFitCheck(preemptionCtx, true)
+		fits, configurableTargets = mergeConfigurableCandidatesWithFitCheck(preemptionCtx, p.candidatesOrdering(preemptionCtx), true)
 		targets = append(targets, configurableTargets...)
 	}
 	if !fits {

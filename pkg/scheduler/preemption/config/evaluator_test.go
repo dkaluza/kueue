@@ -63,12 +63,13 @@ func TestPreemptionEvaluatorCandidates(t *testing.T) {
 	)
 
 	tests := map[string]struct {
-		cohorts        []*kueue.Cohort
-		clusterQueues  []*kueue.ClusterQueue
-		config         kueue.PreemptionConfig
-		admitted       []kueue.Workload
-		preemptorWl    *kueue.Workload
-		preemptorCq    kueue.ClusterQueueReference
+		cohorts       []*kueue.Cohort
+		clusterQueues []*kueue.ClusterQueue
+		config        kueue.PreemptionConfig
+		admitted      []kueue.Workload
+		preemptorWl   *kueue.Workload
+		preemptorCq   kueue.ClusterQueueReference
+		// trigger defaults to kueue.Always when empty.
 		trigger        kueue.PreemptionConfigActivationTrigger
 		client         client.Reader
 		wantCandidates []string

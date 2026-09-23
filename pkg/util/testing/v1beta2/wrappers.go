@@ -1857,3 +1857,40 @@ func (w *CustomLabelWrapper) TrackedValues(values ...string) *CustomLabelWrapper
 func (w *CustomLabelWrapper) Obj() configapi.ControllerMetricsCustomLabel {
 	return w.label
 }
+
+type PreemptionConfigWrapper struct {
+	kueue.PreemptionConfig
+}
+
+func MakePreemptionConfig(name string) *PreemptionConfigWrapper {
+	return &PreemptionConfigWrapper{
+		PreemptionConfig: kueue.PreemptionConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+			},
+		},
+	}
+}
+
+func (pc *PreemptionConfigWrapper) Rule(name string, trigger kueue.PreemptionConfigActivationTrigger, selectors ...kueue.PreemptionConfigPreemptionCandidateSelector) *PreemptionConfigWrapper {
+	pc.Spec.Rules = append(pc.Spec.Rules, kueue.PreemptionConfigPreemptionRule{
+		Name:               name,
+		ActivationPolicy:   kueue.PreemptionConfigActivationPolicy{Trigger: trigger},
+		CandidateSelectors: selectors,
+	})
+	return pc
+}
+
+func (pc *PreemptionConfigWrapper) Rules(rules ...kueue.PreemptionConfigPreemptionRule) *PreemptionConfigWrapper {
+	pc.Spec.Rules = rules
+	return pc
+}
+
+func (pc *PreemptionConfigWrapper) Clone() *PreemptionConfigWrapper {
+	return &PreemptionConfigWrapper{PreemptionConfig: *pc.DeepCopy()}
+}
+
+func (pc *PreemptionConfigWrapper) Obj() *kueue.PreemptionConfig {
+	return &pc.PreemptionConfig
+}
+

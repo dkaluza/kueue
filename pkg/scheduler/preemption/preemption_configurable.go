@@ -61,7 +61,7 @@ func newConfigurableEvaluator(cl client.Client, preemptionCtx *preemptionCtx) *c
 // preferred one, or no candidate if the ClusterQueue uses no PreemptionConfig.
 // Only the candidates still admitted in the snapshot are returned, so a trigger
 // evaluated after some workloads have been preempted never returns those again.
-func configurableCandidates(preemptionCtx *preemptionCtx, trigger kueue.PreemptionConfigActivationTrigger) []*workload.Info {
+func configurableCandidates(preemptionCtx *preemptionCtx, candidatesOrdering func(a, b *workload.Info) int, trigger kueue.PreemptionConfigActivationTrigger) []*workload.Info {
 	if preemptionCtx.configurableEvaluator == nil {
 		return nil
 	}
@@ -70,7 +70,7 @@ func configurableCandidates(preemptionCtx *preemptionCtx, trigger kueue.Preempti
 		preemptionCtx.log.Error(err, "Failed to get candidates for preemption", "trigger", trigger)
 		return nil
 	}
-	slices.SortFunc(candidates, preemptionCtx.candidatesOrdering)
+	slices.SortFunc(candidates, candidatesOrdering)
 	return candidates
 }
 
@@ -97,18 +97,18 @@ func hasConditionalConfigurableRules(preemptionCtx *preemptionCtx) bool {
 // Because candidates are removed from the snapshot as they are evaluated, subsequent
 // fit checks observe the updated snapshot state, and the evaluator only returns
 // candidates still admitted in the snapshot.
-func mergeConfigurableCandidatesWithFitCheck(preemptionCtx *preemptionCtx, allowBorrowing bool) (bool, []*Target) {
+func mergeConfigurableCandidatesWithFitCheck(preemptionCtx *preemptionCtx, candidatesOrdering func(a, b *workload.Info) int, allowBorrowing bool) (bool, []*Target) {
 	if workloadFits(preemptionCtx, allowBorrowing) {
 		return true, nil
 	}
 	if !hasConfigurableRules(preemptionCtx) {
 		return false, nil
 	}
-	fits, targets := simulateConfigurableCandidatesPreemption(preemptionCtx, kueue.Always, allowBorrowing)
+	fits, targets := simulateConfigurableCandidatesPreemption(preemptionCtx, candidatesOrdering, kueue.Always, allowBorrowing)
 	if !fits && hasConditionalConfigurableRules(preemptionCtx) {
 		if !workloadQuotaFits(preemptionCtx, allowBorrowing) {
 			var moreTargets []*Target
-			fits, moreTargets = simulateConfigurableCandidatesPreemption(preemptionCtx, kueue.InsufficientQuota, allowBorrowing)
+			fits, moreTargets = simulateConfigurableCandidatesPreemption(preemptionCtx, candidatesOrdering, kueue.InsufficientQuota, allowBorrowing)
 			targets = append(targets, moreTargets...)
 		}
 		if !fits && workloadQuotaFits(preemptionCtx, allowBorrowing) {
@@ -116,7 +116,7 @@ func mergeConfigurableCandidatesWithFitCheck(preemptionCtx *preemptionCtx, allow
 			// the quota fits while the workload still doesn't fit (meaning topology is
 			// what keeps the workload out).
 			var moreTargets []*Target
-			fits, moreTargets = simulateConfigurableCandidatesPreemption(preemptionCtx, kueue.QuotaFeasibleAndInsufficientTopology, allowBorrowing)
+			fits, moreTargets = simulateConfigurableCandidatesPreemption(preemptionCtx, candidatesOrdering, kueue.QuotaFeasibleAndInsufficientTopology, allowBorrowing)
 			targets = append(targets, moreTargets...)
 		}
 	}
@@ -129,9 +129,9 @@ func mergeConfigurableCandidatesWithFitCheck(preemptionCtx *preemptionCtx, allow
 // The candidates are preempted regardless of what the classical or Fair Sharing rules
 // allow, as the PreemptionConfig selects them explicitly, and are thus reported with the
 // ConfigurablePreemption reason.
-func simulateConfigurableCandidatesPreemption(preemptionCtx *preemptionCtx, trigger kueue.PreemptionConfigActivationTrigger, allowBorrowing bool) (bool, []*Target) {
+func simulateConfigurableCandidatesPreemption(preemptionCtx *preemptionCtx, candidatesOrdering func(a, b *workload.Info) int, trigger kueue.PreemptionConfigActivationTrigger, allowBorrowing bool) (bool, []*Target) {
 	var targets []*Target
-	for _, candidate := range configurableCandidates(preemptionCtx, trigger) {
+	for _, candidate := range configurableCandidates(preemptionCtx, candidatesOrdering, trigger) {
 		preemptionCtx.snapshot.RemoveWorkload(candidate)
 		targets = append(targets, &Target{
 			WorkloadInfo: candidate,
