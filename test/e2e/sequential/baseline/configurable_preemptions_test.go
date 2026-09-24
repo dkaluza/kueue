@@ -73,11 +73,26 @@ var _ = ginkgo.Describe("Configuration Preemptions", ginkgo.Label("feature:confi
 
 	ginkgo.BeforeAll(func() {
 		util.UpdateKueueConfigurationAndRestart(ctx, k8sClient, defaultKueueCfg, kindClusterName, func(cfg *configapi.Configuration) {
-			cfg.FeatureGates = map[string]bool{string(features.ConfigurablePreemption): true}
+			cfg.FeatureGates = map[string]bool{
+				string(features.ConfigurablePreemption):  true,
+				string(features.TopologyAwareScheduling): true,
+			}
 			cfg.Integrations = &configapi.Integrations{
 				LabelKeysToCopy: []string{priorityLabel},
 			}
 		})
+
+		nodes := &corev1.NodeList{}
+		requiredLabelKeys := client.HasLabels{"instance-type"}
+		err := k8sClient.List(ctx, nodes, requiredLabelKeys)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred(), "failed to list nodes for TAS")
+	})
+
+	ginkgo.AfterAll(func() {
+		nodes := &corev1.NodeList{}
+		requiredLabelKeys := client.HasLabels{"instance-type"}
+		err := k8sClient.List(ctx, nodes, requiredLabelKeys)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred(), "failed to list nodes for TAS")
 	})
 
 	ginkgo.BeforeEach(func() {
