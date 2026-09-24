@@ -61,7 +61,7 @@ func newConfigurableEvaluator(cl client.Client, preemptionCtx *preemptionCtx) *c
 // preferred one, or no candidate if the ClusterQueue uses no PreemptionConfig.
 // Only the candidates still admitted in the snapshot are returned, so a trigger
 // evaluated after some workloads have been preempted never returns those again.
-func configurableCandidates(preemptionCtx *preemptionCtx, candidatesOrdering func(a, b *workload.Info) int, trigger kueue.PreemptionConfigActivationTrigger) []*workload.Info {
+func configurableCandidates(preemptionCtx *preemptionCtx, candidatesOrdering func(a, b *workload.Info) int, trigger kueue.PreemptionConfigActivationTrigger) []*configurable.Candidate {
 	if preemptionCtx.configurableEvaluator == nil {
 		return nil
 	}
@@ -70,7 +70,9 @@ func configurableCandidates(preemptionCtx *preemptionCtx, candidatesOrdering fun
 		preemptionCtx.log.Error(err, "Failed to get candidates for preemption", "trigger", trigger)
 		return nil
 	}
-	slices.SortFunc(candidates, candidatesOrdering)
+	slices.SortFunc(candidates, func(a, b *configurable.Candidate) int {
+		return candidatesOrdering(a.WlInfo, b.WlInfo)
+	})
 	return candidates
 }
 
@@ -132,11 +134,15 @@ func mergeConfigurableCandidatesWithFitCheck(preemptionCtx *preemptionCtx, candi
 func simulateConfigurableCandidatesPreemption(preemptionCtx *preemptionCtx, candidatesOrdering func(a, b *workload.Info) int, trigger kueue.PreemptionConfigActivationTrigger, allowBorrowing bool) (bool, []*Target) {
 	var targets []*Target
 	for _, candidate := range configurableCandidates(preemptionCtx, candidatesOrdering, trigger) {
-		preemptionCtx.snapshot.RemoveWorkload(candidate)
+		preemptionCtx.snapshot.RemoveWorkload(candidate.WlInfo)
 		targets = append(targets, &Target{
-			WorkloadInfo: candidate,
+			WorkloadInfo: candidate.WlInfo,
 			Reason:       preemptioncommon.ConfigurablePreemptionReason,
-			WorkloadCq:   preemptionCtx.snapshot.ClusterQueue(candidate.ClusterQueue),
+			WorkloadCq:   preemptionCtx.snapshot.ClusterQueue(candidate.WlInfo.ClusterQueue),
+			ConfigurablePreemptionReasonData: &ConfigurablePreemptionReasonData{
+				ConfigName:                candidate.ConfigName,
+				RuleNameToSelectorIndexes: candidate.RuleNameToSelectorIndexes,
+			},
 		})
 		if workloadFits(preemptionCtx, allowBorrowing) {
 			return true, targets

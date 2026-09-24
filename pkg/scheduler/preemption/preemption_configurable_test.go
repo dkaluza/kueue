@@ -215,6 +215,7 @@ func TestConfigurablePreemptions(t *testing.T) {
 		configurablePreemptionDisabled bool
 		wantPreempted                  sets.Set[string]
 		wantReasons                    map[string]string
+		wantConfigurableReasonsData    map[string]ConfigurablePreemptionReasonData
 	}{
 		"no candidates for CQ without config": {
 			clusterQueues: []*kueue.ClusterQueue{
@@ -901,6 +902,12 @@ func TestConfigurablePreemptions(t *testing.T) {
 			wantReasons: map[string]string{
 				"/a1": "ConfigurablePreemption",
 			},
+			wantConfigurableReasonsData: map[string]ConfigurablePreemptionReasonData{
+				"/a1": {
+					ConfigName:                defaultConfigName,
+					RuleNameToSelectorIndexes: map[string][]int{"test-rule-one": {0}},
+				},
+			},
 		},
 		"QuotaFeasibleAndInsufficientTopology trigger is not used when the quota is insufficient": {
 			// The nominal quota only covers the admitted workloads, so the preemptor
@@ -1002,6 +1009,15 @@ func TestConfigurablePreemptions(t *testing.T) {
 				}
 				if diff := cmp.Diff(tc.wantReasons, gotReasons); diff != "" {
 					t.Errorf("Preemption reasons (-want,+got):\n%s", diff)
+				}
+			}
+			if tc.wantConfigurableReasonsData != nil {
+				gotData := make(map[string]ConfigurablePreemptionReasonData, len(targets))
+				for _, target := range targets {
+					gotData[string(workload.Key(target.WorkloadInfo.Obj))] = *target.ConfigurablePreemptionReasonData
+				}
+				if diff := cmp.Diff(tc.wantConfigurableReasonsData, gotData); diff != "" {
+					t.Errorf("Configurable preemption reasons data (-want,+got):\n%s", diff)
 				}
 			}
 

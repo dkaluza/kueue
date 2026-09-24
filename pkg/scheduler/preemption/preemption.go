@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -131,9 +132,8 @@ type Target struct {
 }
 
 type ConfigurablePreemptionReasonData struct {
-	Config        kueue.PreemptionConfig
-	Rule          kueue.PreemptionRule
-	SelectorIndex int
+	ConfigName                string
+	RuleNameToSelectorIndexes map[string][]int
 }
 
 // ensures that Target implements ObjectRefProvider interface at compile time
@@ -216,11 +216,28 @@ func preemptionMessage(preemptor *kueue.Workload, reason, preemptorPath, preempt
 }
 
 func configurablePreemptionMessage(preemptor *kueue.Workload, reason *ConfigurablePreemptionReasonData) string {
-	return fmt.Sprintf("Preempted by %s because of preemption config %s rule %s/%d",
+	joinRules := func(m map[string][]int) string {
+		var builder strings.Builder
+		for key, values := range m {
+			if builder.Len() > 0 {
+				builder.WriteString("; ")
+			}
+			builder.WriteString(key)
+			builder.WriteRune('/')
+			for index, value := range values {
+				if index > 0 {
+					builder.WriteRune(',')
+				}
+				builder.WriteString(strconv.Itoa(value))
+			}
+		}
+		return builder.String()
+	}
+
+	return fmt.Sprintf("Preempted by %s because of preemption config %s rule %s",
 		workload.Key(preemptor),
-		reason.Config.Name,
-		reason.Rule.Name,
-		reason.SelectorIndex)
+		reason.ConfigName,
+		joinRules(reason.RuleNameToSelectorIndexes))
 }
 
 func (p *Preemptor) SatisfyPreemptionExpectation(log logr.Logger, wl *kueue.Workload) {
@@ -266,12 +283,9 @@ func (p *Preemptor) IssuePreemptions(
 
 		var evictReason string
 		var message string
-
-		// TODO: replace with real constant after rebase
-		preemptioncommon_ConfigurablePreemptionReason := "ConfigurablePreemption"
-		if target.Reason == preemptioncommon_ConfigurablePreemptionReason &&
+		if target.Reason == preemptioncommon.ConfigurablePreemptionReason &&
 			target.ConfigurablePreemptionReasonData != nil {
-			evictReason = preemptioncommon_ConfigurablePreemptionReason
+			evictReason = preemptioncommon.ConfigurablePreemptionReason
 			message = configurablePreemptionMessage(preemptor.Obj, target.ConfigurablePreemptionReasonData)
 		} else {
 			evictReason = kueue.WorkloadEvictedByPreemption
