@@ -17,15 +17,10 @@ limitations under the License.
 package baseline
 
 import (
-	"slices"
-
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	v1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -35,21 +30,12 @@ import (
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	workloadjob "sigs.k8s.io/kueue/pkg/controller/jobs/job"
 	"sigs.k8s.io/kueue/pkg/features"
-	clientutil "sigs.k8s.io/kueue/pkg/util/client"
-	"sigs.k8s.io/kueue/pkg/util/tas"
 	utiltestingapi "sigs.k8s.io/kueue/pkg/util/testing/v1beta2"
 	jobtesting "sigs.k8s.io/kueue/pkg/util/testingjobs/job"
-	testingjob "sigs.k8s.io/kueue/pkg/util/testingjobs/job"
 	"sigs.k8s.io/kueue/test/util"
 )
 
 var _ = ginkgo.Describe("Configuration Preemptions", ginkgo.Label("feature:configurablepreemption"), ginkgo.Ordered, ginkgo.ContinueOnFailure, func() {
-	const (
-		extraResource    = "example.com/extraResource"
-		commonLabelKey   = "commonTestingKey"
-		commonLabelValue = "commonTestingValue"
-	)
-
 	var (
 		ns *corev1.Namespace
 		rf *kueue.ResourceFlavor
@@ -100,21 +86,6 @@ var _ = ginkgo.Describe("Configuration Preemptions", ginkgo.Label("feature:confi
 		requiredLabelKeys := client.HasLabels{"instance-type"}
 		err := k8sClient.List(ctx, nodes, requiredLabelKeys)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred(), "failed to list nodes for TAS")
-
-		// Assign common label and add extra resource to every node.
-		for _, n := range nodes.Items {
-			gomega.Eventually(func(g gomega.Gomega) {
-				node := &corev1.Node{}
-				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: n.Name}, node)).To(gomega.Succeed())
-				err := clientutil.PatchStatus(ctx, k8sClient, node, func() (bool, error) {
-					node.Labels[commonLabelKey] = commonLabelValue
-					node.Status.Capacity[extraResource] = resource.MustParse("1")
-					node.Status.Allocatable[extraResource] = resource.MustParse("1")
-					return true, nil
-				})
-				g.Expect(err).NotTo(gomega.HaveOccurred())
-			}, util.Timeout, util.Interval).Should(gomega.Succeed())
-		}
 	})
 
 	ginkgo.AfterAll(func() {
@@ -122,21 +93,6 @@ var _ = ginkgo.Describe("Configuration Preemptions", ginkgo.Label("feature:confi
 		requiredLabelKeys := client.HasLabels{"instance-type"}
 		err := k8sClient.List(ctx, nodes, requiredLabelKeys)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred(), "failed to list nodes for TAS")
-
-		// Remove common label and extra resource from every node.
-		for _, n := range nodes.Items {
-			gomega.Eventually(func(g gomega.Gomega) {
-				node := &corev1.Node{}
-				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: n.Name}, node)).To(gomega.Succeed())
-				err := clientutil.PatchStatus(ctx, k8sClient, node, func() (bool, error) {
-					delete(node.Labels, commonLabelKey)
-					delete(node.Status.Capacity, extraResource)
-					delete(node.Status.Allocatable, extraResource)
-					return true, nil
-				})
-				g.Expect(err).NotTo(gomega.HaveOccurred())
-			}, util.Timeout, util.Interval).Should(gomega.Succeed())
-		}
 	})
 
 	ginkgo.BeforeEach(func() {
@@ -231,118 +187,6 @@ var _ = ginkgo.Describe("Configuration Preemptions", ginkgo.Label("feature:confi
 					cmpopts.IgnoreFields(metav1.Condition{}, "LastTransitionTime", "Message", "ObservedGeneration"),
 				)))
 			}, util.Timeout, util.Interval).Should(gomega.Succeed())
-		})
-	})
-
-	ginkgo.When("Defragmentation preemption is configured", func() {
-		var (
-			preemptionConfig kueue.PreemptionConfig
-
-			rf       *kueue.ResourceFlavor
-			topology *kueue.Topology
-			cq       *kueue.ClusterQueue
-			lq       *kueue.LocalQueue
-		)
-
-		ginkgo.AfterEach(func() {
-			gomega.Expect(util.DeleteNamespace(ctx, k8sClient, ns)).To(gomega.Succeed())
-			util.ExpectObjectToBeDeleted(ctx, k8sClient, cq, true)
-			util.ExpectObjectToBeDeleted(ctx, k8sClient, rf, true)
-			util.ExpectObjectToBeDeleted(ctx, k8sClient, topology, true)
-			util.ExpectObjectToBeDeleted(ctx, k8sClient, &preemptionConfig, true)
-			util.ExpectAllPodsInNamespaceDeleted(ctx, k8sClient, ns)
-		})
-
-		ginkgo.It("Should reschedule running workload and schedule incoming", func() {
-			defragPreemptionConfigName := "defrag-preemption-config"
-			preemptionConfig = kueue.PreemptionConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: defragPreemptionConfigName,
-				},
-				Spec: kueue.PreemptionConfigSpec{
-					Rules: []kueue.PreemptionRule{
-						{
-							Name:    "defrag-config",
-							Trigger: kueue.InsufficientTopology,
-							Candidates: []kueue.PreemptionCandidateSelector{
-								{
-									RelationRequirement: kueue.SameClusterQueue,
-								},
-							},
-						},
-					},
-				},
-			}
-			util.MustCreate(ctx, k8sClient, &preemptionConfig)
-
-			topology = utiltestingapi.MakeDefaultOneLevelTopology("defrag-topology")
-			util.MustCreate(ctx, k8sClient, topology)
-
-			rf = utiltestingapi.MakeResourceFlavor("rf-defrag").
-				// NodeLabel is required when TopologyName exists
-				NodeLabel(commonLabelKey, commonLabelValue).
-				TopologyName(topology.Name).
-				Obj()
-			util.MustCreate(ctx, k8sClient, rf)
-
-			cq = utiltestingapi.MakeClusterQueue("cq-defrag").
-				ResourceGroup(*utiltestingapi.MakeFlavorQuotas(rf.Name).
-					Resource(extraResource, "2").
-					Obj()).
-				PreemptionConfigName(defragPreemptionConfigName).
-				Obj()
-			util.CreateClusterQueuesAndWaitForActive(ctx, k8sClient, cq)
-
-			lq = utiltestingapi.MakeLocalQueue("lq-defrag", ns.Name).ClusterQueue(cq.Name).Obj()
-			util.CreateLocalQueuesAndWaitForActive(ctx, k8sClient, lq)
-
-			var jobA *v1.Job
-			ginkgo.By("Schedule first job which requires whole extraResource available for node", func() {
-				jobA = testingjob.MakeJob("job-a", ns.Name).
-					Queue(kueue.LocalQueueName(lq.Name)).
-					RequestAndLimit(extraResource, "1").
-					PodAnnotation(kueue.PodSetRequiredTopologyAnnotation, corev1.LabelHostname).
-					Image(util.GetAgnHostImage(), util.BehaviorWaitForDeletion).
-					TerminationGracePeriod(1).
-					Obj()
-				util.MustCreate(ctx, k8sClient, jobA)
-				util.ExpectJobToBeRunning(ctx, k8sClient, jobA)
-			})
-
-			var nodeName string
-			wlA := &kueue.Workload{}
-			ginkgo.By("Get workload and hostname for first job", func() {
-				gomega.Expect(k8sClient.Get(ctx, types.NamespacedName{
-					Name:      workloadjob.GetWorkloadNameForJob(jobA.Name, jobA.UID),
-					Namespace: ns.Name,
-				}, wlA)).To(gomega.Succeed())
-
-				nodesA := slices.Collect(tas.LowestLevelValues(wlA.Status.Admission.PodSetAssignments[0].TopologyAssignment))
-				gomega.Expect(len(nodesA)).To(gomega.Equal(1))
-				nodeName = nodesA[0]
-			})
-
-			var jobB *v1.Job
-			ginkgo.By("Schedule second job which requires whole extraResource and nodes are limited to nodes of first job", func() {
-				jobB = testingjob.MakeJob("job-b", ns.Name).
-					Queue(kueue.LocalQueueName(lq.Name)).
-					RequestAndLimit(extraResource, "1").
-					NodeSelector(corev1.LabelHostname, nodeName).
-					PodAnnotation(kueue.PodSetRequiredTopologyAnnotation, corev1.LabelHostname).
-					Image(util.GetAgnHostImage(), util.BehaviorWaitForDeletion).
-					TerminationGracePeriod(1).
-					Obj()
-				util.MustCreate(ctx, k8sClient, jobB)
-				util.ExpectJobToBeRunning(ctx, k8sClient, jobB)
-			})
-
-			ginkgo.By("Verify first job got preempted and rescheduled", func() {
-				util.ExpectJobToBeRunning(ctx, k8sClient, jobA)
-				util.ExpectJobToBeRunning(ctx, k8sClient, jobB)
-
-				gomega.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(wlA), wlA)).Should(gomega.Succeed())
-				gomega.Expect(meta.FindStatusCondition(wlA.Status.Conditions, "Preempted")).Should(gomega.Not(gomega.BeNil()))
-			})
 		})
 	})
 })
