@@ -74,6 +74,12 @@ func (p *PreemptionEvaluator) HasRulesFor(triggers ...kueue.PreemptionConfigActi
 	return false
 }
 
+type Candidate struct {
+	WlInfo                    *workload.Info
+	ConfigName                string
+	RuleNameToSelectorIndexes map[string][]int
+}
+
 // Candidates returns the workloads selected as preemption candidates by the rules of the
 // PreemptionConfig activated by the given trigger, deduplicated across the rules and
 // selectors of the trigger.
@@ -82,10 +88,10 @@ func (p *PreemptionEvaluator) Candidates(
 	preemptor *workload.Info,
 	flavorsNeedPreemption sets.Set[resources.FlavorResource],
 	trigger kueue.PreemptionConfigActivationTrigger,
-) ([]*workload.Info, error) {
-	var candidates []*workload.Info
+) ([]*Candidate, error) {
+	var candidates []*Candidate
 	// Several rules, or several selectors of a rule, can select the same workload.
-	seen := sets.New[types.UID]()
+	seen := map[types.UID]int{}
 	for _, rule := range p.config.Spec.Rules {
 		if rule.ActivationPolicy.Trigger != trigger {
 			continue
@@ -98,7 +104,7 @@ func (p *PreemptionEvaluator) Candidates(
 			continue
 		}
 
-		for _, selector := range rule.CandidateSelectors {
+		for selectorIndex, selector := range rule.CandidateSelectors {
 			filter, rejectAll := filters.NewCandidateFilters(p.log, &selector, preemptor, snapshot)
 			if rejectAll {
 				continue
@@ -110,9 +116,23 @@ func (p *PreemptionEvaluator) Candidates(
 				}
 
 				for _, wlInfo := range targetCq.Workloads {
-					if !seen.Has(wlInfo.Obj.UID) && matchesWorkload(&filter, wlInfo) && classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
-						seen.Insert(wlInfo.Obj.UID)
-						candidates = append(candidates, wlInfo)
+					existingIndex, found := seen[wlInfo.Obj.UID]
+
+					if matchesWorkload(&filter, wlInfo) && classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
+						var candidate *Candidate
+						if found {
+							candidate = candidates[existingIndex]
+						} else {
+							seen[wlInfo.Obj.UID] = len(candidates)
+							candidate = &Candidate{
+								WlInfo:                    wlInfo,
+								ConfigName:                p.config.Name,
+								RuleNameToSelectorIndexes: map[string][]int{},
+							}
+							candidates = append(candidates, candidate)
+						}
+
+						candidate.RuleNameToSelectorIndexes[rule.Name] = append(candidate.RuleNameToSelectorIndexes[rule.Name], selectorIndex)
 					}
 				}
 			}

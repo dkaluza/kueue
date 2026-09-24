@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -124,6 +125,15 @@ type Target struct {
 	WorkloadInfo *workload.Info
 	Reason       string
 	WorkloadCq   *schdcache.ClusterQueueSnapshot
+
+	// ConfigurablePreemptionReasonData stores data which resulted in eviction.
+	// Specified only when eviction is due to configurable preemption.
+	ConfigurablePreemptionReasonData *ConfigurablePreemptionReasonData
+}
+
+type ConfigurablePreemptionReasonData struct {
+	ConfigName                string
+	RuleNameToSelectorIndexes map[string][]int
 }
 
 // ensures that Target implements ObjectRefProvider interface at compile time
@@ -205,6 +215,31 @@ func preemptionMessage(preemptor *kueue.Workload, reason, preemptorPath, preempt
 	)
 }
 
+func configurablePreemptionMessage(preemptor *kueue.Workload, reason *ConfigurablePreemptionReasonData) string {
+	joinRules := func(m map[string][]int) string {
+		var builder strings.Builder
+		for key, values := range m {
+			if builder.Len() > 0 {
+				builder.WriteString("; ")
+			}
+			builder.WriteString(key)
+			builder.WriteRune('/')
+			for index, value := range values {
+				if index > 0 {
+					builder.WriteRune(',')
+				}
+				builder.WriteString(strconv.Itoa(value))
+			}
+		}
+		return builder.String()
+	}
+
+	return fmt.Sprintf("Preempted by %s because of preemption config %s rule %s",
+		workload.Key(preemptor),
+		reason.ConfigName,
+		joinRules(reason.RuleNameToSelectorIndexes))
+}
+
 func (p *Preemptor) SatisfyPreemptionExpectation(log logr.Logger, wl *kueue.Workload) {
 	targetKey := types.NamespacedName{Name: wl.Name, Namespace: wl.Namespace}
 	p.preemptionExpectations.ObservedUID(log, targetKey, wl.UID)
@@ -246,11 +281,21 @@ func (p *Preemptor) IssuePreemptions(
 
 		p.preemptionExpectations.ExpectUIDs(log, targetKey, []types.UID{target.WorkloadInfo.Obj.UID})
 
-		message := preemptionMessage(preemptor.Obj, target.Reason, preemptorPath, preempteePath)
+		var evictReason string
+		var message string
+		if target.Reason == preemptioncommon.ConfigurablePreemptionReason &&
+			target.ConfigurablePreemptionReasonData != nil {
+			evictReason = preemptioncommon.ConfigurablePreemptionReason
+			message = configurablePreemptionMessage(preemptor.Obj, target.ConfigurablePreemptionReasonData)
+		} else {
+			evictReason = kueue.WorkloadEvictedByPreemption
+			message = preemptionMessage(preemptor.Obj, target.Reason, preemptorPath, preempteePath)
+		}
+
 		wlCopy := target.WorkloadInfo.Obj.DeepCopy()
 		exposeLqMetrics := cache.ShouldExposeLocalQueueMetricsForWorkload(log, wlCopy)
 		err := workloadevict.Evict(
-			ctx, p.client, p.recorder, wlCopy, kueue.WorkloadEvictedByPreemption, message, "", p.clock, exposeLqMetrics, p.roleTracker, p.customLabels,
+			ctx, p.client, p.recorder, wlCopy, evictReason, message, "", p.clock, exposeLqMetrics, p.roleTracker, p.customLabels,
 			workloadevict.WithCustomPrepare(func(wl *kueue.Workload) {
 				workload.SetPreemptedCondition(wl, p.clock.Now(), target.Reason, message)
 			}),
