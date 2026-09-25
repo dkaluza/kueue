@@ -39,6 +39,7 @@ type RangeSpec struct {
 	} `json:"cmd"`
 	ClusterQueueClassesMinUsage      map[string]float64 `json:"clusterQueueClassesMinUsage"`
 	WlClassesMaxAvgTimeToAdmissionMs map[string]int64   `json:"wlClassesMaxAvgTimeToAdmissionMs"`
+	WlClassesMinEvictions            map[string]int32   `json:"wlClassesMinEvictions,omitempty"`
 }
 
 func TestScalability(t *testing.T) {
@@ -110,6 +111,11 @@ func TestScalability(t *testing.T) {
 				}
 				if wlcSummary.AverageTimeToAdmissionMs > expected {
 					t.Errorf("Average wait for admission %dms is more then expected %dms", wlcSummary.AverageTimeToAdmissionMs, expected)
+				}
+				if minEvictions, found := rangeSpec.WlClassesMinEvictions[c]; found {
+					if wlcSummary.TotalEvictions < minEvictions {
+						t.Errorf("Total evictions %d is less than expected %d", wlcSummary.TotalEvictions, minEvictions)
+					}
 				}
 			})
 		}

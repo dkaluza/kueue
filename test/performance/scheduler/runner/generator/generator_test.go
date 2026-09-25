@@ -326,3 +326,70 @@ cohorts:
 		t.Errorf("expected podCount 16, got %d", wl.PodCount)
 	}
 }
+
+func TestLoadConfig_PreemptionConfig(t *testing.T) {
+	testContent := `
+cohorts:
+  - className: cohort
+    count: 1
+    queuesSets:
+      - className: cq
+        count: 1
+        nominalQuota: 10
+        preemptionConfig:
+          rules:
+            - trigger: InsufficientQuota
+              candidates:
+                - relationRequirement: SameClusterQueue
+                  relativeWorkloadPriority: Lower
+        workloadsSets:
+          - count: 5
+            creationIntervalMs: 20
+            workloads:
+              - className: low
+                runtimeMs: 10000
+                priority: 10
+                request: 1
+          - count: 2
+            initialDelayMs: 2000
+            creationIntervalMs: 50
+            workloads:
+              - className: high
+                runtimeMs: 1000
+                priority: 100
+                request: 1
+`
+	tempDir := t.TempDir()
+	fPath := filepath.Join(tempDir, "config.yaml")
+	if err := os.WriteFile(fPath, []byte(testContent), os.FileMode(0600)); err != nil {
+		t.Fatalf("unable to create test file: %v", err)
+	}
+
+	got, err := LoadConfig(fPath)
+	if err != nil {
+		t.Fatalf("unexpected load error: %v", err)
+	}
+
+	queue := got.Cohorts[0].QueuesSets[0]
+	if queue.PreemptionConfig == nil {
+		t.Fatal("expected preemptionConfig to be parsed")
+	}
+	if len(queue.PreemptionConfig.Rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(queue.PreemptionConfig.Rules))
+	}
+	rule := queue.PreemptionConfig.Rules[0]
+	if rule.Trigger != "InsufficientQuota" {
+		t.Errorf("expected trigger 'InsufficientQuota', got %q", rule.Trigger)
+	}
+	if len(rule.Candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(rule.Candidates))
+	}
+	if rule.Candidates[0].RelationRequirement != "SameClusterQueue" {
+		t.Errorf("expected relation requirement 'SameClusterQueue', got %q", rule.Candidates[0].RelationRequirement)
+	}
+
+	wlSet1 := queue.WorkloadsSets[1]
+	if wlSet1.InitialDelayMs != 2000 {
+		t.Errorf("expected initialDelayMs 2000, got %d", wlSet1.InitialDelayMs)
+	}
+}

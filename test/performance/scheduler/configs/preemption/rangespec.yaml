@@ -1,0 +1,12 @@
+cmd:
+  maxWallMs: 40_000
+
+clusterQueueClassesMinUsage:
+  cq: 5 #%
+
+wlClassesMaxAvgTimeToAdmissionMs:
+  low-prio: 8_000
+  high-prio: 5_000
+
+wlClassesMinEvictions:
+  low-prio: 5
