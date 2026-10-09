@@ -375,3 +375,23 @@ func (w *CandidateSelectorWrapper) NumericLabels(constraints ...kueuealpha.Preem
 func (w *CandidateSelectorWrapper) Obj() kueuealpha.PreemptionConfigPreemptionCandidateSelector {
 	return w.PreemptionConfigPreemptionCandidateSelector
 }
+
+// PreemptionLimitWrapper wraps a PreemptionLimit.
+type PreemptionLimitWrapper struct {
+	kueuealpha.PreemptionLimit
+}
+
+// MakePreemptionLimit creates a PreemptionLimit wrapper with the given scope.
+func MakePreemptionLimit(name string, scope kueuealpha.PreemptionLimitScope) *PreemptionLimitWrapper {
+	return &PreemptionLimitWrapper{
+		Name: name,
+		Spec: kueuealpha.PreemptionLimitSpec{
+			Scope: scope,
+		},
+	}
+}
+
+// Obj returns the inner PreemptionLimit.
+func (pl *PreemptionLimitWrapper) Obj() *kueuealpha.PreemptionLimit {
+	return &pl.PreemptionLimit
+}

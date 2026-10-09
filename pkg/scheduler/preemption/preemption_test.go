@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,6 +45,7 @@ import (
 	"sigs.k8s.io/kueue/pkg/resources"
 	"sigs.k8s.io/kueue/pkg/scheduler/flavorassigner"
 	preemptexpectations "sigs.k8s.io/kueue/pkg/scheduler/preemption/expectations"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/limits"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
 	utilslices "sigs.k8s.io/kueue/pkg/util/slices"
 	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
@@ -4798,6 +4800,154 @@ func TestIssuePreemptionsSkipsDuplicate(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	rf := utiltestingapi.MakeResourceFlavor("default").Obj()
+	cq := utiltestingapi.MakeClusterQueue("standalone").
+		ResourceGroup(
+			*utiltestingapi.MakeFlavorQuotas("default").
+				Resource(corev1.ResourceCPU, "6").
+				Obj(),
+		).
+		Obj()
+	victim := utiltestingapi.MakeWorkload("victim", "default").
+		UID("victim").
+		ResourceVersion("1").
+		Request(corev1.ResourceCPU, "2").
+		ReserveQuotaAt(
+			utiltestingapi.MakeAdmission("standalone").
+				PodSets(utiltestingapi.MakePodSetAssignment(kueue.DefaultPodSetName).
+					Assignment(corev1.ResourceCPU, "default", "2000m").
+					Obj()).
+				Obj(),
+			now,
+		)
+	consumedLimits := map[policy.PreemptionLimitReference]policy.PreemptionLimitScopeValue{
+		"global":                 "Global",
+		"per-preempted-workload": "default/victim",
+	}
+	configurableReasonData := &policy.ConfigurablePreemptionReasonData{
+		ConfigName:     "config",
+		ConsumedLimits: consumedLimits,
+	}
+	evictionErr := errors.New("simulated eviction error")
+
+	cases := map[string]struct {
+		disableLimits bool
+		victim        *kueue.Workload
+		reason        string
+		reasonData    *policy.ConfigurablePreemptionReasonData
+		evictionErr   error
+		issueTwice    bool
+		wantRecorded  map[policy.PreemptionLimitReference]policy.PreemptionLimitScopeValue
+	}{
+		"configurable preemption is recorded": {
+			victim:       victim.Clone().Obj(),
+			reason:       kueue.ConfigurablePreemptionReason,
+			reasonData:   configurableReasonData,
+			wantRecorded: consumedLimits,
+		},
+		"configurable preemption is not recorded when the ConfigurablePreemptionLimits feature is disabled": {
+			disableLimits: true,
+			victim:        victim.Clone().Obj(),
+			reason:        kueue.ConfigurablePreemptionReason,
+			reasonData:    configurableReasonData,
+		},
+		"classical preemption is not recorded": {
+			victim: victim.Clone().Obj(),
+			reason: kueue.InClusterQueueReason,
+		},
+		"failed eviction is not recorded": {
+			victim:      victim.Clone().Obj(),
+			reason:      kueue.ConfigurablePreemptionReason,
+			reasonData:  configurableReasonData,
+			evictionErr: evictionErr,
+		},
+		"already evicted victim is not recorded": {
+			victim:     victim.Clone().EvictedAt(now).Obj(),
+			reason:     kueue.ConfigurablePreemptionReason,
+			reasonData: configurableReasonData,
+		},
+		"issuing the same preemption twice records it once": {
+			victim:       victim.Clone().Obj(),
+			reason:       kueue.ConfigurablePreemptionReason,
+			reasonData:   configurableReasonData,
+			issueTwice:   true,
+			wantRecorded: consumedLimits,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			features.SetFeatureGatesDuringTest(t, map[featuregate.Feature]bool{
+				features.ConfigurablePreemptions:      true,
+				features.ConfigurablePreemptionLimits: !tc.disableLimits,
+				features.WorkloadRequestUseMergePatch: false,
+			})
+			ctx, log := utiltesting.ContextWithLog(t)
+			cl := utiltesting.NewClientBuilder().
+				WithObjects(tc.victim).
+				WithStatusSubresource(&kueue.Workload{}).
+				WithInterceptorFuncs(interceptor.Funcs{
+					SubResourceApply: func(ctx context.Context, c client.Client, subResourceName string, applyConf runtime.ApplyConfiguration, opts ...client.SubResourceApplyOption) error {
+						if tc.evictionErr != nil {
+							return tc.evictionErr
+						}
+						return utiltesting.TreatSSAAsStrategicMergeForApplyConfiguration(ctx, c, subResourceName, applyConf, opts...)
+					},
+				}).
+				Build()
+
+			cqCache := schdcache.New(cl)
+			cqCache.AddOrUpdateResourceFlavor(log, rf.DeepCopy())
+			if err := cqCache.AddClusterQueue(ctx, cq.DeepCopy()); err != nil {
+				t.Fatalf("Couldn't add ClusterQueue to cache: %v", err)
+			}
+			snapshot, err := cqCache.Snapshot(ctx)
+			if err != nil {
+				t.Fatalf("unexpected error while building snapshot: %v", err)
+			}
+
+			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil)
+
+			preemptorInfo := workload.NewInfo(log, utiltestingapi.MakeWorkload("preemptor", "default").
+				UID("preemptor").
+				Request(corev1.ResourceCPU, "2").
+				Obj())
+			preemptorInfo.ClusterQueue = "standalone"
+			victimInfo := workload.NewInfo(log, tc.victim)
+			victimInfo.ClusterQueue = "standalone"
+			targets := []*Target{{
+				WorkloadInfo:                     victimInfo,
+				Reason:                           tc.reason,
+				WorkloadCq:                       snapshot.ClusterQueue("standalone"),
+				ConfigurablePreemptionReasonData: tc.reasonData,
+			}}
+
+			_, _, err = preemptor.IssuePreemptions(ctx, cqCache, preemptorInfo, targets, snapshot.ClusterQueue("standalone"))
+			if diff := cmp.Diff(tc.evictionErr, err, cmpopts.EquateErrors()); diff != "" {
+				t.Errorf("Unexpected IssuePreemptions() error (-want,+got):\n%s", diff)
+			}
+			if tc.issueTwice {
+				// As in the next scheduling cycle, before the first eviction is observed.
+				if _, _, err := preemptor.IssuePreemptions(ctx, cqCache, preemptorInfo, targets, snapshot.ClusterQueue("standalone")); err != nil {
+					t.Fatalf("Second IssuePreemptions() failed: %v", err)
+				}
+			}
+
+			// The PreemptionLimitTracker exposes no read API yet, so the expected
+			// tracker is built with Record, which the limits package tests cover.
+			wantTracker := limits.NewPreemptionLimitTracker()
+			wantTracker.Record(now, tc.wantRecorded)
+			if diff := cmp.Diff(wantTracker, preemptor.preemptionLimitTracker,
+				cmp.AllowUnexported(limits.PreemptionLimitTracker{}),
+				cmpopts.IgnoreTypes(sync.RWMutex{}),
+			); diff != "" {
+				t.Errorf("Unexpected recorded preemptions (-want,+got):\n%s", diff)
+			}
+		})
 	}
 }
 

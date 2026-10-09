@@ -654,6 +654,8 @@ Relevant capabilities include:
 3. **Preempted ClusterQueue protection**: Limit or block preemptions targeting workloads belonging to a specific ClusterQueue (e.g., setting `limit: 0` to make mission-critical or hero queues non-preemptible).
 4. **Preempted Workload churn limiting**: Restrict how many times an individual workload can be preempted within a given time window to avoid starvation or ping-pong eviction loops.
 
+`PreemptionLimit` is exposed under the `ConfigurablePreemptionLimits` feature gate, which requires the `ConfigurablePreemptions` feature gate.
+
 ### Proposed API for PreemptionLimit
 
 In a future iteration, `PreemptionLimit` will be introduced as a cluster-scoped CRD:

@@ -870,6 +870,13 @@ const (
 	// Verifies fair sharing preemption targets after fillBackWorkloads
 	// to prevent preemption loops caused by temporary share deflation.
 	FairSharingVerifyFinalTargets featuregate.Feature = "FairSharingVerifyFinalTargets"
+
+	// owner: @danylott
+	// kep: https://github.com/kubernetes-sigs/kueue/tree/main/keps/13396-configurable-preemptions
+	//
+	// Enables PreemptionLimits, rate-limiting the preemptions issued by configurable
+	// preemptions. Requires the ConfigurablePreemptions feature gate.
+	ConfigurablePreemptionLimits featuregate.Feature = "ConfigurablePreemptionLimits"
 )
 
 func init() {
@@ -898,6 +905,7 @@ var defaultFeatureGateDependencies = map[featuregate.Feature][]featuregate.Featu
 	ElasticJobsViaWorkloadSlicesWithTAS:                 {ElasticJobsViaWorkloadSlices, TopologyAwareScheduling},
 	ElasticJobsViaWorkloadSlicesFlavorChangeFromZero:    {ElasticJobsViaWorkloadSlices},
 	MultiKueueRayInTreeAutoscaling:                      {MultiKueue, ElasticJobsViaWorkloadSlices, SkipChildJobSuspension},
+	ConfigurablePreemptionLimits:                        {ConfigurablePreemptions},
 	KueueDRAIntegrationExtendedResource:                 {KueueDRAIntegration},
 	KueueDRAIntegrationPartitionableDevices:             {KueueDRAIntegration},
 	KueueDRAIntegrationConsumableCapacity:               {KueueDRAIntegration},
@@ -1348,6 +1356,10 @@ var defaultVersionedFeatureGates = map[featuregate.Feature]featuregate.Versioned
 
 	FairSharingVerifyFinalTargets: {
 		{Version: version.MustParse("0.21"), Default: true, PreRelease: featuregate.Beta},
+	},
+
+	ConfigurablePreemptionLimits: {
+		{Version: version.MustParse("0.21"), Default: false, PreRelease: featuregate.Alpha},
 	},
 }
 

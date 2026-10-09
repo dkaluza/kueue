@@ -48,6 +48,7 @@ import (
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/classical"
 	configurable "sigs.k8s.io/kueue/pkg/scheduler/preemption/config"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/fairsharing"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/limits"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
 	"sigs.k8s.io/kueue/pkg/util/expectations"
 	"sigs.k8s.io/kueue/pkg/util/logging"
@@ -74,6 +75,7 @@ type Preemptor struct {
 	roleTracker            *roletracker.RoleTracker
 	customLabels           *metrics.CustomLabels
 	preemptionExpectations *expectations.Store
+	preemptionLimitTracker *limits.PreemptionLimitTracker
 }
 
 // PreemptionStrategy represents a singular set of ordered potential preemption candidates.
@@ -153,6 +155,7 @@ func New(
 		roleTracker:            tracker,
 		customLabels:           customLabels,
 		preemptionExpectations: preemptionExpectations,
+		preemptionLimitTracker: limits.NewPreemptionLimitTracker(),
 	}
 	return p
 }
@@ -322,6 +325,9 @@ func (p *Preemptor) IssuePreemptions(
 			errCh.SendErrorWithCancel(err, cancel)
 			preemptionErrors.Add(1)
 			return
+		}
+		if features.Enabled(features.ConfigurablePreemptionLimits) && target.ConfigurablePreemptionReasonData != nil {
+			p.preemptionLimitTracker.Record(p.clock.Now(), target.ConfigurablePreemptionReasonData.ConsumedLimits)
 		}
 		preemptorEffPri, preemptorBase, preemptorBoost := priorityInfo(log, preemptor.Obj)
 		targetEffPri, targetBase, targetBoost := priorityInfo(log, target.WorkloadInfo.Obj)

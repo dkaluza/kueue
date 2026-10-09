@@ -34,4 +34,5 @@ milestone:
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
   - name: ConfigurablePreemptions
+  - name: ConfigurablePreemptionLimits
 disable-supported: true

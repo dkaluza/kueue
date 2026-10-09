@@ -1015,7 +1015,7 @@ Create performance test suite for preemptions to validate current implementation
 
 **Step 4.** Implement additional candidate selectors (time-based execution and creation duration selectors) and minimum trigger duration (`minTriggerRequiredDuration`).
 
-**Step 5.** Future design and implementation of preemption rate limiting (`PreemptionLimit`).
+**Step 5.** Future design and implementation of preemption rate limiting (`PreemptionLimit`), exposed under the feature gate "ConfigurablePreemptionLimits", which requires "ConfigurablePreemptions".
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

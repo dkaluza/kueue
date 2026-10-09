@@ -44,6 +44,9 @@ type ConfigurablePreemptionReasonData struct {
 	// RuleNameToSelectorIndexes maps rule names to the indexes of selectors
 	// that the workload satisfies.
 	RuleNameToSelectorIndexes map[PreemptionConfigRuleReference][]int
+	// ConsumedLimits maps each PreemptionLimit to the scope value consumed by
+	// preempting this target.
+	ConsumedLimits map[PreemptionLimitReference]PreemptionLimitScopeValue
 }
 
 // PreemptionConfigReference is a dedicated type to reference PreemptionConfig
@@ -51,6 +54,13 @@ type PreemptionConfigReference string
 
 // PreemptionConfigRuleReference is a dedicated type to reference PreemptionConfigPreemptionRule
 type PreemptionConfigRuleReference string
+
+// PreemptionLimitReference is a dedicated type to reference PreemptionLimit
+type PreemptionLimitReference string
+
+// PreemptionLimitScopeValue identifies a scoped entity within a PreemptionLimit
+// (e.g. "Global", a ClusterQueue name, or "<namespace>/<workload-name>").
+type PreemptionLimitScopeValue string
 
 func (d *ConfigurablePreemptionReasonData) EvictionMessage(preemptor *kueue.Workload) string {
 	return fmt.Sprintf("Preempted by %s because of preemption config %s rule %s",
