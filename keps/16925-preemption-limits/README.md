@@ -68,7 +68,7 @@ updates.
 
 ## Motivation
 
-While `PreemptionConfig` provides declarative candidate selection policies, cluster administrators also need rate-limiting guardrails to prevent cascading preemptions, eviction storms, and cluster instability during large-scale rescheduling.
+While `PreemptionConfig` provides declarative candidate selection policies, cluster administrators also need rate-limiting guardrails to rollout new configurations safely, prevent cascading preemptions, eviction storms, and cluster instability during large-scale rescheduling.
 
 ### Goals
 
@@ -89,7 +89,7 @@ This KEP proposes a new preemption rate limiting mechanism - for now supported o
 Relevant capabilities include:
 
 1. **Global rate-limiting**: Restrict the total number of preemption events across the entire cluster within a sliding time window.
-2. **Preempting ClusterQueue rate-limiting**: Throttle preemptions triggered by workloads originating from a specific ClusterQueue.
+2. **Preemptor ClusterQueue rate-limiting**: Throttle preemptions triggered by workloads originating from a specific ClusterQueue.
 3. **Preempted ClusterQueue protection**: Limit or block preemptions targeting workloads belonging to a specific ClusterQueue (e.g., setting `limit: 0` to make mission-critical or hero queues non-preemptible).
 4. **Preempted Workload churn limiting**: Restrict how many times an individual workload can be preempted within a given time window to avoid starvation, ping-pong eviction loops or bullying of particular workload.
 
@@ -103,7 +103,7 @@ Mistakes in `PreemptionConfigs` can lead to serious consequences like mass evict
 spec:
   scope: "Global"
   limit: 1
-  limitWindowDuration: "1h"
+  limitWindowSeconds: 3600
   configSelector:
     matchLabels:
       example.com/config-name: "experimental-preemption-config"
@@ -117,7 +117,7 @@ Rate-limit preemptions of each workload in the cluster, so that it can be preemp
 spec:
   scope: "PreemptedWorkload"
   limit: 1
-  limitWindowDuration: "1d"
+  limitWindowSeconds: 86400
 ```
 
 #### Story 3 - Global Preemption Rate Limiting
@@ -128,7 +128,7 @@ Rate-limit global preemptions to at most 10 evictions across the entire cluster 
 spec:
   scope: "Global"
   limit: 10
-  limitWindowDuration: "5m"
+  limitWindowSeconds: 300
 ```
 
 #### Story 4 - Protecting a Mission-Critical ClusterQueue from Preemption
@@ -142,7 +142,7 @@ spec:
     matchLabels:
       example.com/cluster-queue-name: "hero-cq"
   limit: 0
-  limitWindowDuration: "1h"
+  limitWindowSeconds: 3600
 ```
 
 ### Caveats
@@ -194,11 +194,11 @@ type PreemptionLimit struct {
 // PreemptionLimitScope specifies the entity boundary for a preemption limit.
 // Possible values are:
 // - "Global": restricts the total number of preemption events across the entire cluster within the sliding time window.
-// - "PreemptingClusterQueue": restricts the number of preemption events triggered by workloads originating from a specific ClusterQueue within the sliding time window.
+// - "PreemptorClusterQueue": restricts the number of preemption events triggered by workloads originating from a specific ClusterQueue within the sliding time window.
 // - "PreemptedClusterQueue": restricts the number of preemption events targeting workloads belonging to a specific ClusterQueue within the sliding time window.
 // - "PreemptedWorkload": restricts how many times an individual workload can be preempted within the sliding time window.
 //
-// +kubebuilder:validation:Enum=Global;PreemptingClusterQueue;PreemptedClusterQueue;PreemptedWorkload
+// +kubebuilder:validation:Enum=Global;PreemptorClusterQueue;PreemptedClusterQueue;PreemptedWorkload
 type PreemptionLimitScope string
 
 const (
@@ -206,9 +206,9 @@ const (
 	// across the entire cluster within the sliding time window.
 	GlobalPreemptionLimitScope PreemptionLimitScope = "Global"
 
-	// PreemptingCQLimitScope restricts the number of preemption events triggered by workloads
+	// PreemptorCQLimitScope restricts the number of preemption events triggered by workloads
 	// originating from a specific ClusterQueue within the sliding time window.
-	PreemptingCQLimitScope PreemptionLimitScope = "PreemptingClusterQueue"
+	PreemptorCQLimitScope PreemptionLimitScope = "PreemptorClusterQueue"
 
 	// PreemptedCQLimitScope restricts the number of preemption events targeting workloads
 	// belonging to a specific ClusterQueue within the sliding time window.
@@ -268,7 +268,7 @@ type PreemptionLimitStatus struct {
 PreemptionLimit limits the number of preemptions that happen for the specified set of rules. The preemption evaluator evaluates proposed preemptions against defined limit objects, allowing them to proceed only if adequate preemption quota remains. If a preemption is in the scope of multiple limits, quota must exist in all of them.
 To track this, a list of preemption rule names responsible for selecting each candidate must be maintained.
 
-To manage this data, Kueue will store a comprehensive preemption map in memory, isolated per PreemptionLimit. This map tracks all preemption event timestamps under a specific CQ/workload key, capturing events that occurred within the designated `LimitWindowDuration`. Moreover, it tracks only events that are in the scope of the specific limit; if a preemption does not match the defined config or rules selector, it will not be tracked in that particular instance of the preemption map. This list is dynamically trimmed upon each retrieval to filter out expired timestamps.
+To manage this data, Kueue will store a comprehensive preemption map in memory, isolated per PreemptionLimit. This map tracks all preemption event timestamps under a specific CQ/workload key, capturing events that occurred within the designated `LimitWindowSeconds`. Moreover, it tracks only events that are in the scope of the specific limit; if a preemption does not match the defined config or rules selector, it will not be tracked in that particular instance of the preemption map. This list is dynamically trimmed upon each retrieval to filter out expired timestamps.
 
 Furthermore, the status of the PreemptionLimit is refreshed periodically — approximately every minute — to write the aggregated totals into the count map (restricted to the top 1000 counts to fit within CRD size limits).
 

@@ -1053,7 +1053,7 @@ Why should this KEP _not_ be implemented?
    - It will make preemption rules maintenance harder.
    - It will not allow defining fine-grained global preemption limits.
 
-4. Consolidation of **PreemptionConfig** and **PreemptionLimit** into a single CRD.
+4. Consolidation of **PreemptionConfig** and **PreemptionLimit** ([KEP-16925](/keps/16925-preemption-limits/README.md)) into a single CRD.
    Ruled out because:
    - It will not allow limiting preemptions globally across ClusterQueues.
    - It will make configurations like "this ClusterQueue should never be preempted" unintuitive.
