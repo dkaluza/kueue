@@ -78,6 +78,7 @@ import (
 	"sigs.k8s.io/kueue/pkg/scheduler"
 	preemptexpectations "sigs.k8s.io/kueue/pkg/scheduler/preemption/expectations"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/fairsharing"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/limits"
 	"sigs.k8s.io/kueue/pkg/util/cert"
 	utildra "sigs.k8s.io/kueue/pkg/util/dra"
 	"sigs.k8s.io/kueue/pkg/util/expectations"
@@ -398,6 +399,11 @@ func main() {
 	}
 	queues := qcache.NewManager(mgr.GetClient(), cCache, requeuer, queueOptions...)
 
+	var preemptionLimitTracker *limits.PreemptionLimitTracker
+	if features.Enabled(features.ConfigurablePreemptionLimits) {
+		preemptionLimitTracker = limits.NewPreemptionLimitTracker()
+	}
+
 	resourceSliceAPIAvailable := utildra.CheckResourceSliceAPIAvailable(mgr)
 
 	if err := setupIndexes(ctx, mgr, &cfg, integrationManager, resourceSliceAPIAvailable); err != nil {
@@ -435,6 +441,7 @@ func main() {
 	controllerOpts := core.SetupControllersOpts{
 		RoleTracker:               roleTracker,
 		PreemptionExpectations:    preemptionExpectations,
+		PreemptionLimitTracker:    preemptionLimitTracker,
 		CustomLabels:              customLabels,
 		DRAMapper:                 draMapper,
 		DRABackedResources:        draBackedResources,
@@ -463,7 +470,7 @@ func main() {
 		}()
 	}
 
-	if err := setupScheduler(mgr, cCache, queues, &cfg, roleTracker, preemptionExpectations, customLabels, resourceFormatter); err != nil {
+	if err := setupScheduler(mgr, cCache, queues, &cfg, roleTracker, preemptionExpectations, preemptionLimitTracker, customLabels, resourceFormatter); err != nil {
 		setupLog.Error(err, "Could not setup scheduler")
 		os.Exit(1)
 	}
@@ -705,6 +712,7 @@ func setupScheduler(
 	cfg *configapi.Configuration,
 	roleTracker *roletracker.RoleTracker,
 	preemptionExpectations *expectations.Store,
+	preemptionLimitTracker *limits.PreemptionLimitTracker,
 	customLabels *metrics.CustomLabels,
 	resourceFormatter *resources.ResourceFormatter,
 ) error {
@@ -719,6 +727,7 @@ func setupScheduler(
 		scheduler.WithQuotaCheckStrategy(quotaCheckStrategy(cfg)),
 		scheduler.WithRoleTracker(roleTracker),
 		scheduler.WithPreemptionExpectations(preemptionExpectations),
+		scheduler.WithPreemptionLimitTracker(preemptionLimitTracker),
 		scheduler.WithCustomLabels(customLabels),
 		scheduler.WithResourceFormatter(resourceFormatter),
 	)

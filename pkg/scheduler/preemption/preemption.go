@@ -143,6 +143,7 @@ func New(
 	tracker *roletracker.RoleTracker,
 	preemptionExpectations *expectations.Store,
 	customLabels *metrics.CustomLabels,
+	preemptionLimitTracker *limits.PreemptionLimitTracker,
 ) *Preemptor {
 	p := &Preemptor{
 		clock:                  clock,
@@ -155,9 +156,7 @@ func New(
 		roleTracker:            tracker,
 		customLabels:           customLabels,
 		preemptionExpectations: preemptionExpectations,
-	}
-	if features.Enabled(features.ConfigurablePreemptionLimits) {
-		p.preemptionLimitTracker = limits.NewPreemptionLimitTracker()
+		preemptionLimitTracker: preemptionLimitTracker,
 	}
 	return p
 }

@@ -1005,7 +1005,7 @@ func TestConfigurablePreemptions(t *testing.T) {
 			}
 
 			recorder := &utiltesting.EventRecorder{}
-			preemptor := New(cl, workload.Ordering{}, recorder, tc.fairSharing, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil)
+			preemptor := New(cl, workload.Ordering{}, recorder, tc.fairSharing, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil, nil)
 
 			beforeSnapshot, err := cqCache.Snapshot(ctx)
 			if err != nil {
@@ -1134,7 +1134,7 @@ func TestPreemptionOracleConfigurablePreemptions(t *testing.T) {
 				t.Fatalf("unexpected error while building snapshot: %v", err)
 			}
 
-			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, tc.fairSharing, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil)
+			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, tc.fairSharing, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil, nil)
 			wlInfo := workload.NewInfo(log, unitWl.Clone().Name("a_incoming").Obj())
 			wlInfo.ClusterQueue = "a"
 

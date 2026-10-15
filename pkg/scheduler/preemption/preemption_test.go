@@ -4293,7 +4293,7 @@ func TestPreemption(t *testing.T) {
 				}
 
 				recorder := &utiltesting.EventRecorder{}
-				preemptor := New(cl, workload.Ordering{}, recorder, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil)
+				preemptor := New(cl, workload.Ordering{}, recorder, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil, nil)
 
 				beforeSnapshot, err := cqCache.Snapshot(ctx)
 				if err != nil {
@@ -4528,7 +4528,7 @@ func TestPreemptionWhenWorkloadModifiedConcurrently(t *testing.T) {
 				}
 
 				recorder := &utiltesting.EventRecorder{}
-				preemptor := New(cl, workload.Ordering{}, recorder, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil)
+				preemptor := New(cl, workload.Ordering{}, recorder, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil, nil)
 
 				beforeSnapshot, err := cqCache.Snapshot(ctx)
 				if err != nil {
@@ -4640,7 +4640,7 @@ func TestIssuePreemptionsCountsFailures(t *testing.T) {
 
 	recorder := &utiltesting.EventRecorder{}
 	store := preemptexpectations.New()
-	preemptor := New(cl, workload.Ordering{}, recorder, nil, false, clocktesting.NewFakeClock(now), nil, store, nil)
+	preemptor := New(cl, workload.Ordering{}, recorder, nil, false, clocktesting.NewFakeClock(now), nil, store, nil, nil)
 
 	snapshot, err := cqCache.Snapshot(ctx)
 	if err != nil {
@@ -4762,7 +4762,7 @@ func TestIssuePreemptionsSkipsDuplicate(t *testing.T) {
 				}
 
 				recorder := &utiltesting.EventRecorder{}
-				preemptor := New(cl, workload.Ordering{}, recorder, nil, false, clocktesting.NewFakeClock(now), nil, store, nil)
+				preemptor := New(cl, workload.Ordering{}, recorder, nil, false, clocktesting.NewFakeClock(now), nil, store, nil, nil)
 
 				snapshot, err := cqCache.Snapshot(ctx)
 				if err != nil {
@@ -4910,7 +4910,8 @@ func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
 				t.Fatalf("unexpected error while building snapshot: %v", err)
 			}
 
-			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil)
+			tracker := limits.NewPreemptionLimitTracker()
+			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil, tracker)
 
 			preemptorInfo := workload.NewInfo(log, utiltestingapi.MakeWorkload("preemptor", "default").
 				UID("preemptor").
@@ -4937,14 +4938,11 @@ func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
 				}
 			}
 
-			// The PreemptionLimitTracker exposes no read API yet, so the expected
-			// tracker is built with Record, which the limits package tests cover.
-			var wantTracker *limits.PreemptionLimitTracker
-			if !tc.disableLimits {
-				wantTracker = limits.NewPreemptionLimitTracker()
-				wantTracker.Record(now, tc.wantRecorded)
-			}
-			if diff := cmp.Diff(wantTracker, preemptor.preemptionLimitTracker,
+			// Outside the limits package a tracker can only be built through Record,
+			// which the limits package tests cover.
+			wantTracker := limits.NewPreemptionLimitTracker()
+			wantTracker.Record(now, tc.wantRecorded)
+			if diff := cmp.Diff(wantTracker, tracker,
 				cmp.AllowUnexported(limits.PreemptionLimitTracker{}),
 				cmpopts.IgnoreTypes(sync.RWMutex{}),
 			); diff != "" {
@@ -5365,7 +5363,7 @@ func TestPreemptionWithPodsQuota(t *testing.T) {
 				}},
 			}
 
-			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil)
+			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil, nil)
 			strategies := preemptor.GetPreemptionStrategyIterator(ctx, *wlInfo, snapshot, assignment)
 			var got []string
 			for _, target := range preemptor.GetTargetsWithStrategy(ctx, strategies) {
