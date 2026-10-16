@@ -41,6 +41,8 @@ import (
 	"sigs.k8s.io/kueue/pkg/features"
 	"sigs.k8s.io/kueue/pkg/resources"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/filters"
+	preemptexpectations "sigs.k8s.io/kueue/pkg/scheduler/preemption/expectations"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/limits"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
 	utilslices "sigs.k8s.io/kueue/pkg/util/slices"
 	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
@@ -545,7 +547,7 @@ func TestPreemptionEvaluatorCandidates(t *testing.T) {
 			wlInfo := workload.NewInfo(log, tc.preemptorWl)
 			wlInfo.ClusterQueue = tc.preemptorCq
 
-			evaluator := NewPreemptionEvaluator(ctx, log, tc.config, nil, wlInfo, candidatesByName)
+			evaluator := NewPreemptionEvaluator(ctx, log, tc.config, nil, nil, nil, nil, time.Time{}, wlInfo, candidatesByName)
 
 			trigger := tc.trigger
 			if trigger == "" {
@@ -747,7 +749,7 @@ func TestPreemptionEvaluatorSelectorIndexes(t *testing.T) {
 			wlInfo := workload.NewInfo(log, tc.preemptorWl)
 			wlInfo.ClusterQueue = tc.preemptorCq
 
-			evaluator := NewPreemptionEvaluator(ctx, log, tc.config, nil, wlInfo, candidatesByName)
+			evaluator := NewPreemptionEvaluator(ctx, log, tc.config, nil, nil, nil, nil, time.Time{}, wlInfo, candidatesByName)
 
 			trigger := tc.trigger
 			if trigger == "" {
@@ -955,7 +957,7 @@ func TestPreemptionEvaluatorFindCandidates(t *testing.T) {
 			preemptor.ClusterQueue = "a"
 			var evaluator *PreemptionEvaluator
 			if tc.config != nil {
-				evaluator = NewPreemptionEvaluator(ctx, log, *tc.config, nil, preemptor, candidatesByName)
+				evaluator = NewPreemptionEvaluator(ctx, log, *tc.config, nil, nil, nil, nil, time.Time{}, preemptor, candidatesByName)
 			}
 			requestedCPU := preemptor.TotalRequests[0].Requests.ResourceValue(corev1.ResourceCPU)
 			quotaFits := func() bool {
@@ -981,58 +983,185 @@ func TestPreemptionEvaluatorFindCandidates(t *testing.T) {
 	}
 }
 
-func TestNewEvaluatorForPreemptionConfigConsumedLimits(t *testing.T) {
+func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
+	const windowSeconds = 60
 	now := time.Now()
-	clusterQueue := utiltestingapi.MakeClusterQueue("a").
-		ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
-			Resource(corev1.ResourceCPU, "1").Obj()).
-		Obj()
+	clusterQueues := []*kueue.ClusterQueue{
+		utiltestingapi.MakeClusterQueue("a").
+			ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
+				Resource(corev1.ResourceCPU, "3").Obj()).
+			Obj(),
+		utiltestingapi.MakeClusterQueue("b").
+			ResourceGroup(*utiltestingapi.MakeFlavorQuotas("default").
+				Resource(corev1.ResourceCPU, "3").Obj()).
+			Obj(),
+	}
 	fr := resources.FlavorResource{Flavor: "default", Resource: corev1.ResourceCPU}
+	// preemptionConfig selects the low tier workloads of any ClusterQueue unconditionally,
+	// and the other ones while the quota is insufficient, which it always is in this test.
 	preemptionConfig := utiltestingalpha.MakePreemptionConfig("test").
-		Rule("within-cluster-queue-rule", kueuealpha.Always,
-			utiltestingalpha.MakeCandidateSelector(kueuealpha.WithinClusterQueue).Obj(),
+		Rule("low-tier-rule", kueuealpha.Always,
+			utiltestingalpha.MakeCandidateSelector(kueuealpha.AnyClusterQueue).
+				LabelSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"tier": "low"}}).Obj(),
+		).
+		Rule("any-cluster-queue-rule", kueuealpha.InsufficientQuota,
+			utiltestingalpha.MakeCandidateSelector(kueuealpha.AnyClusterQueue).Obj(),
 		).Obj()
-	admitted := utiltestingapi.MakeWorkload("a1", "").UID("a1").
-		Request(corev1.ResourceCPU, "1").
-		SimpleReserveQuota("a", "default", now).
-		Obj()
+	unitWl := *utiltestingapi.MakeWorkload("unit", "").Request(corev1.ResourceCPU, "1")
+	// The PreemptionLimits are listed, and therefore checked, in name order.
+	globalLimit := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).
+		LimitWindowSeconds(windowSeconds)
+	perPreemptedCQLimit := utiltestingalpha.MakePreemptionLimit("per-preempted-cq", kueuealpha.PreemptedCQLimitScope).
+		LimitWindowSeconds(windowSeconds)
 
 	cases := map[string]struct {
-		enableLimits bool
-		listErr      error
-		want         map[string]policy.ConsumedLimits
+		disableLimits    bool
+		listErr          error
+		preemptionLimits []kueuealpha.PreemptionLimit
+		admitted         []kueue.Workload
+		// unobservedEvictions are the names of the admitted workloads whose eviction
+		// was issued but not observed yet.
+		unobservedEvictions []string
+		// findCandidatesTwice checks the candidates of a second FindCandidates call
+		// of the same evaluator, rather than those of the first one.
+		findCandidatesTwice bool
+		want                map[string]policy.ConsumedLimits
 	}{
-		"limits are not consumed when the ConfigurablePreemptionLimits feature is disabled": {
+		"matching limits are consumed": {
+			preemptionLimits: []kueuealpha.PreemptionLimit{*globalLimit.Clone().Limit(10).Obj(), *perPreemptedCQLimit.Clone().Limit(10).Obj()},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("b1").SimpleReserveQuota("b", "default", now).Obj(),
+			},
+			want: map[string]policy.ConsumedLimits{
+				"/a1": {"global": "Global", "per-preempted-cq": "a"},
+				"/b1": {"global": "Global", "per-preempted-cq": "b"},
+			},
+		},
+		"limit of 0 blocks every candidate": {
+			preemptionLimits: []kueuealpha.PreemptionLimit{*globalLimit.Clone().Limit(0).Obj()},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("b1").SimpleReserveQuota("b", "default", now).Obj(),
+			},
+			want: map[string]policy.ConsumedLimits{},
+		},
+		"limits not selecting the PreemptionConfig are neither enforced nor attached": {
+			preemptionLimits: []kueuealpha.PreemptionLimit{
+				*utiltestingalpha.MakePreemptionLimit("other-configs", kueuealpha.GlobalPreemptionLimitScope).
+					ConfigSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"tier": "other"}}).Obj(),
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+			},
 			want: map[string]policy.ConsumedLimits{
 				"/a1": nil,
 			},
 		},
-		"limits with different scopes are consumed when the ConfigurablePreemptionLimits feature is enabled": {
-			enableLimits: true,
+		"evicted candidates are yielded without limits and take no budget": {
+			// a2 comes while the budget is partly used, and a4 once it is exhausted.
+			preemptionLimits: []kueuealpha.PreemptionLimit{*globalLimit.Clone().Limit(2).Obj()},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).EvictedAt(now).Obj(),
+				*unitWl.Clone().Name("a3").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a4").SimpleReserveQuota("a", "default", now).EvictedAt(now).Obj(),
+			},
 			want: map[string]policy.ConsumedLimits{
-				"/a1": {"global": "Global", "per-preempted-cq": "a"},
+				"/a1": {"global": "Global"},
+				"/a2": nil,
+				"/a3": {"global": "Global"},
+				"/a4": nil,
+			},
+		},
+		"candidates with an unobserved eviction are yielded without limits and take no budget": {
+			// a2 comes while the budget is partly used, and a4 once it is exhausted.
+			preemptionLimits: []kueuealpha.PreemptionLimit{*globalLimit.Clone().Limit(2).Obj()},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a3").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a4").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			unobservedEvictions: []string{"a2", "a4"},
+			want: map[string]policy.ConsumedLimits{
+				"/a1": {"global": "Global"},
+				"/a2": nil,
+				"/a3": {"global": "Global"},
+				"/a4": nil,
+			},
+		},
+		"budget is shared by the triggers of one call": {
+			preemptionLimits: []kueuealpha.PreemptionLimit{*globalLimit.Clone().Limit(1).Obj()},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").Label("tier", "low").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			want: map[string]policy.ConsumedLimits{
+				"/a1": {"global": "Global"},
+			},
+		},
+		"budget starts afresh at each FindCandidates call": {
+			preemptionLimits: []kueuealpha.PreemptionLimit{*globalLimit.Clone().Limit(1).Obj()},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			findCandidatesTwice: true,
+			want: map[string]policy.ConsumedLimits{
+				"/a1": {"global": "Global"},
+			},
+		},
+		"limits are neither enforced nor attached when the ConfigurablePreemptionLimits feature is disabled": {
+			disableLimits:    true,
+			preemptionLimits: []kueuealpha.PreemptionLimit{*globalLimit.Clone().Limit(0).Obj()},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			want: map[string]policy.ConsumedLimits{
+				"/a1": nil,
+				"/a2": nil,
 			},
 		},
 		"no candidates are yielded when the PreemptionLimits cannot be listed": {
-			enableLimits: true,
-			listErr:      errors.New("simulated List error"),
-			want:         map[string]policy.ConsumedLimits{},
+			listErr:          errors.New("simulated List error"),
+			preemptionLimits: []kueuealpha.PreemptionLimit{*globalLimit.Clone().Limit(10).Obj()},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			want: map[string]policy.ConsumedLimits{},
+		},
+		"no candidates are yielded when a PreemptionLimit has an invalid selector": {
+			preemptionLimits: []kueuealpha.PreemptionLimit{
+				*utiltestingalpha.MakePreemptionLimit("invalid", kueuealpha.GlobalPreemptionLimitScope).Limit(10).
+					ClusterQueueSelector(&metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "tier", Operator: "invalid"}},
+					}).Obj(),
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			want: map[string]policy.ConsumedLimits{},
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
+			// Given
 			features.SetFeatureGatesDuringTest(t, map[featuregate.Feature]bool{
 				features.ConfigurablePreemptions:      true,
-				features.ConfigurablePreemptionLimits: tc.enableLimits,
+				features.ConfigurablePreemptionLimits: !tc.disableLimits,
 			})
 			ctx, log := utiltesting.ContextWithLog(t)
+			for i := range tc.admitted {
+				tc.admitted[i].UID = types.UID(tc.admitted[i].Name)
+			}
 			cl := utiltesting.NewClientBuilder().
-				WithObjects(
-					preemptionConfig,
-					utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).Obj(),
-					utiltestingalpha.MakePreemptionLimit("per-preempted-cq", kueuealpha.PreemptedCQLimitScope).Obj(),
+				WithObjects(preemptionConfig).
+				WithLists(
+					&kueuealpha.PreemptionLimitList{Items: tc.preemptionLimits},
+					&kueue.WorkloadList{Items: tc.admitted},
 				).
-				WithLists(&kueue.WorkloadList{Items: []kueue.Workload{*admitted}}).
 				WithInterceptorFuncs(interceptor.Funcs{
 					List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 						if _, ok := list.(*kueuealpha.PreemptionLimitList); ok && tc.listErr != nil {
@@ -1044,23 +1173,41 @@ func TestNewEvaluatorForPreemptionConfigConsumedLimits(t *testing.T) {
 				Build()
 			cqCache := schdcache.New(cl)
 			cqCache.AddOrUpdateResourceFlavor(log, utiltestingapi.MakeResourceFlavor("default").Obj())
-			if err := cqCache.AddClusterQueue(ctx, clusterQueue); err != nil {
-				t.Fatalf("Couldn't add ClusterQueue to cache: %v", err)
+			for _, cq := range clusterQueues {
+				if err := cqCache.AddClusterQueue(ctx, cq); err != nil {
+					t.Fatalf("Couldn't add ClusterQueue to cache: %v", err)
+				}
 			}
-			snapshot, err := cqCache.Snapshot(ctx)
-			if err != nil {
-				t.Fatalf("unexpected error while building snapshot: %v", err)
+			tracker := limits.NewPreemptionLimitTracker()
+			preemptionExpectations := preemptexpectations.New()
+			for _, name := range tc.unobservedEvictions {
+				preemptionExpectations.ExpectUIDs(log, types.NamespacedName{Name: name}, []types.UID{types.UID(name)})
 			}
-			preemptor := workload.NewInfo(log, utiltestingapi.MakeWorkload("a_incoming", "").Request(corev1.ResourceCPU, "1").Obj())
+			preemptor := workload.NewInfo(log, unitWl.Clone().Name("a_incoming").Obj())
 			preemptor.ClusterQueue = "a"
-			evaluator := NewEvaluatorForPreemptionConfig(ctx, log, cl, preemptionConfig.Name, preemptor, candidatesByName)
+			evaluator := NewEvaluatorForPreemptionConfig(ctx, log, cl, tracker, preemptionExpectations, now, preemptionConfig.Name, preemptor, candidatesByName)
+			// findCandidates returns the consumed limits of each candidate yielded on a
+			// fresh snapshot, as the yielded candidates are removed from the snapshot.
+			findCandidates := func() map[string]policy.ConsumedLimits {
+				snapshot, err := cqCache.Snapshot(ctx)
+				if err != nil {
+					t.Fatalf("unexpected error while building snapshot: %v", err)
+				}
+				got := map[string]policy.ConsumedLimits{}
+				evaluator.FindCandidates(snapshot, sets.New(fr), func() bool { return false }, func(target *policy.Target) bool {
+					got[string(workload.Key(target.WorkloadInfo.Obj))] = target.ConfigurablePreemptionReasonData.ConsumedLimits
+					return true
+				})
+				return got
+			}
 
-			got := map[string]policy.ConsumedLimits{}
-			evaluator.FindCandidates(snapshot, sets.New(fr), func() bool { return false }, func(target *policy.Target) bool {
-				got[string(workload.Key(target.WorkloadInfo.Obj))] = target.ConfigurablePreemptionReasonData.ConsumedLimits
-				return true
-			})
+			// When
+			got := findCandidates()
+			if tc.findCandidatesTwice {
+				got = findCandidates()
+			}
 
+			// Then
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("Unexpected consumed limits (-want,+got):\n%s", diff)
 			}

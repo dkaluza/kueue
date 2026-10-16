@@ -28,51 +28,67 @@ import (
 	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
 	utiltestingalpha "sigs.k8s.io/kueue/pkg/util/testing/v1alpha1"
-	utiltestingapi "sigs.k8s.io/kueue/pkg/util/testing/v1beta2"
-	"sigs.k8s.io/kueue/pkg/workload"
 )
 
-func TestResolve(t *testing.T) {
-	preemptor := &workload.Info{
-		Obj:          utiltestingapi.MakeWorkload("preemptor", "ns").Obj(),
-		ClusterQueue: "preempting-cq",
-	}
-	target := &workload.Info{
-		Obj:          utiltestingapi.MakeWorkload("target", "ns").Obj(),
-		ClusterQueue: "preempted-cq",
-	}
+func TestPreemptionLimitTrackerCount(t *testing.T) {
+	const windowSeconds = 60
+	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	cutoff := now.Add(-windowSeconds * time.Second)
+	limit := utiltestingalpha.MakePreemptionLimit("per-cq", kueuealpha.PreemptingCQLimitScope).LimitWindowSeconds(windowSeconds).Obj()
 
 	cases := map[string]struct {
-		preemptionLimits []kueuealpha.PreemptionLimit
-		want             policy.ConsumedLimits
+		events     map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events
+		limit      *kueuealpha.PreemptionLimit
+		scopeValue policy.PreemptionLimitScopeValue
+		want       int32
 	}{
-		"no limits": {},
-		"single limit resolves its scope value": {
-			preemptionLimits: []kueuealpha.PreemptionLimit{
-				*utiltestingalpha.MakePreemptionLimit("preempted-workload", kueuealpha.PreemptedWorkloadLimitScope).Obj(),
+		"events before the window are not counted": {
+			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
+				"per-cq": {"cq-a": {cutoff.Add(-time.Hour), cutoff.Add(-time.Nanosecond), cutoff.Add(time.Nanosecond), now}},
 			},
-			want: policy.ConsumedLimits{"preempted-workload": "ns/target"},
+			limit:      limit,
+			scopeValue: "cq-a",
+			want:       2,
 		},
-		"each scope resolves its scope value": {
-			preemptionLimits: []kueuealpha.PreemptionLimit{
-				*utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).Obj(),
-				*utiltestingalpha.MakePreemptionLimit("preempting-cq", kueuealpha.PreemptingCQLimitScope).Obj(),
-				*utiltestingalpha.MakePreemptionLimit("preempted-cq", kueuealpha.PreemptedCQLimitScope).Obj(),
-				*utiltestingalpha.MakePreemptionLimit("preempted-workload", kueuealpha.PreemptedWorkloadLimitScope).Obj(),
+		"event at the start of the window is counted": {
+			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
+				"per-cq": {"cq-a": {cutoff}},
 			},
-			want: policy.ConsumedLimits{
-				"global":             "Global",
-				"preempting-cq":      "preempting-cq",
-				"preempted-cq":       "preempted-cq",
-				"preempted-workload": "ns/target",
+			limit:      limit,
+			scopeValue: "cq-a",
+			want:       1,
+		},
+		"window comes from the limit spec": {
+			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
+				"per-cq": {"cq-a": {now.Add(-2 * time.Hour), now.Add(-30 * time.Minute)}},
 			},
+			limit:      utiltestingalpha.MakePreemptionLimit("per-cq", kueuealpha.PreemptingCQLimitScope).LimitWindowSeconds(3600).Obj(),
+			scopeValue: "cq-a",
+			want:       1,
+		},
+		"unknown limit counts nothing": {
+			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
+				"other": {"cq-a": {now}},
+			},
+			limit:      limit,
+			scopeValue: "cq-a",
+			want:       0,
+		},
+		"unknown scope value counts nothing": {
+			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
+				"per-cq": {"cq-b": {now}},
+			},
+			limit:      limit,
+			scopeValue: "cq-a",
+			want:       0,
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := Resolve(tc.preemptionLimits, preemptor, target)
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("Unexpected consumed limits (-want,+got):\n%s", diff)
+			tracker := NewPreemptionLimitTracker()
+			tracker.events = tc.events
+			if got := tracker.Count(now, tc.limit, tc.scopeValue); got != tc.want {
+				t.Errorf("Count() = %d, want %d", got, tc.want)
 			}
 		})
 	}

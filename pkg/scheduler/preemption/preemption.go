@@ -227,7 +227,8 @@ func (p *Preemptor) newConfigurableEvaluator(ctx context.Context, log logr.Logge
 	if !features.Enabled(features.ConfigurablePreemptions) || cq == nil || cq.PreemptionConfigName == nil {
 		return nil
 	}
-	return configurable.NewEvaluatorForPreemptionConfig(ctx, log, p.client, *cq.PreemptionConfigName, preemptor, p.candidatesOrdering(log, cq.Name))
+	return configurable.NewEvaluatorForPreemptionConfig(ctx, log, p.client, p.preemptionLimitTracker, p.preemptionExpectations, p.clock.Now(),
+		*cq.PreemptionConfigName, preemptor, p.candidatesOrdering(log, cq.Name))
 }
 
 // candidatesOrdering returns the order in which the preemption candidates are
