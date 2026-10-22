@@ -28,51 +28,72 @@ import (
 	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
 	utiltestingalpha "sigs.k8s.io/kueue/pkg/util/testing/v1alpha1"
-	utiltestingapi "sigs.k8s.io/kueue/pkg/util/testing/v1beta2"
-	"sigs.k8s.io/kueue/pkg/workload"
 )
 
-func TestResolve(t *testing.T) {
-	preemptor := &workload.Info{
-		Obj:          utiltestingapi.MakeWorkload("preemptor", "ns").Obj(),
-		ClusterQueue: "preempting-cq",
-	}
-	target := &workload.Info{
-		Obj:          utiltestingapi.MakeWorkload("target", "ns").Obj(),
-		ClusterQueue: "preempted-cq",
-	}
+func TestPreemptionLimitTrackerCounts(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	perCQ := utiltestingalpha.MakePreemptionLimit("per-cq", kueuealpha.PreemptingCQLimitScope).LimitWindowSeconds(60).Obj()
+	cutoff := now.Add(-60 * time.Second)
 
 	cases := map[string]struct {
-		preemptionLimits []kueuealpha.PreemptionLimit
-		want             policy.ConsumedLimits
+		events map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events
+		limits []*kueuealpha.PreemptionLimit
+		want   preemptionCounts
 	}{
-		"no limits": {},
-		"single limit resolves its scope value": {
-			preemptionLimits: []kueuealpha.PreemptionLimit{
-				*utiltestingalpha.MakePreemptionLimit("preempted-workload", kueuealpha.PreemptedWorkloadLimitScope).Obj(),
+		"events before the window are not counted": {
+			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
+				"per-cq": {"cq-a": {cutoff.Add(-time.Hour), cutoff.Add(-time.Nanosecond), cutoff.Add(time.Nanosecond), now}},
 			},
-			want: policy.ConsumedLimits{"preempted-workload": "ns/target"},
+			limits: []*kueuealpha.PreemptionLimit{perCQ},
+			want: preemptionCounts{
+				"per-cq": {"cq-a": 2},
+			},
 		},
-		"each scope resolves its scope value": {
-			preemptionLimits: []kueuealpha.PreemptionLimit{
-				*utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).Obj(),
-				*utiltestingalpha.MakePreemptionLimit("preempting-cq", kueuealpha.PreemptingCQLimitScope).Obj(),
-				*utiltestingalpha.MakePreemptionLimit("preempted-cq", kueuealpha.PreemptedCQLimitScope).Obj(),
-				*utiltestingalpha.MakePreemptionLimit("preempted-workload", kueuealpha.PreemptedWorkloadLimitScope).Obj(),
+		"event at the start of the window is counted": {
+			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
+				"per-cq": {"cq-a": {cutoff}},
 			},
-			want: policy.ConsumedLimits{
-				"global":             "Global",
-				"preempting-cq":      "preempting-cq",
-				"preempted-cq":       "preempted-cq",
-				"preempted-workload": "ns/target",
+			limits: []*kueuealpha.PreemptionLimit{perCQ},
+			want: preemptionCounts{
+				"per-cq": {"cq-a": 1},
 			},
+		},
+		"each limit counts within its own window": {
+			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
+				"per-cq": {"cq-a": {now.Add(-30 * time.Minute)}},
+				"global": {"Global": {now.Add(-2 * time.Hour), now.Add(-30 * time.Minute)}},
+			},
+			limits: []*kueuealpha.PreemptionLimit{
+				perCQ,
+				utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(3600).Obj(),
+			},
+			want: preemptionCounts{
+				"global": {"Global": 1},
+			},
+		},
+		"every scope value of a limit is counted": {
+			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
+				"per-cq": {"cq-a": {now}, "cq-b": {now, now}},
+			},
+			limits: []*kueuealpha.PreemptionLimit{perCQ},
+			want: preemptionCounts{
+				"per-cq": {"cq-a": 1, "cq-b": 2},
+			},
+		},
+		"limits that are not asked for are not counted": {
+			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
+				"other": {"cq-a": {now}},
+			},
+			limits: []*kueuealpha.PreemptionLimit{perCQ},
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := Resolve(tc.preemptionLimits, preemptor, target)
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("Unexpected consumed limits (-want,+got):\n%s", diff)
+			tracker := NewPreemptionLimitTracker()
+			tracker.events = tc.events
+			got := tracker.counts(now, tc.limits)
+			if diff := cmp.Diff(tc.want, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("Unexpected counts (-want,+got):\n%s", diff)
 			}
 		})
 	}
