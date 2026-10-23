@@ -19,6 +19,7 @@ package core
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -41,35 +42,54 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	expired := now.Add(-time.Hour)
 	errTest := errors.New("test error")
-	limit := utiltestingalpha.MakePreemptionLimit("limit", kueuealpha.PreemptingCQLimitScope).
-		LimitWindowSeconds(60).
-		Obj()
+	limit := utiltestingalpha.MakePreemptionLimit("limit", kueuealpha.PreemptingCQLimitScope).UID("uid").LimitWindowSeconds(60).Obj()
+	otherLimit := utiltestingalpha.MakePreemptionLimit("other-limit", kueuealpha.GlobalPreemptionLimitScope).UID("other-uid").LimitWindowSeconds(60).Obj()
+	consumed := func(l *kueuealpha.PreemptionLimit, v policy.PreemptionLimitScopeValue) policy.ConsumedLimit {
+		return policy.ConsumedLimit{UID: l.UID, Scope: l.Spec.Scope, ScopeValue: v}
+	}
 	// recorded holds the preemption events of the tracker, by timestamp.
 	type recorded map[time.Time]policy.ConsumedLimits
+	// newTracker syncs the given limits, as only synced limits are recorded.
+	// Outside the limits package a tracker can only be built through its
+	// methods, which the limits package tests cover.
+	newTracker := func(synced []*kueuealpha.PreemptionLimit, r recorded) *limits.PreemptionLimitTracker {
+		tracker := limits.NewPreemptionLimitTracker()
+		for _, l := range synced {
+			tracker.Sync(now, l)
+		}
+		for ts, consumedLimits := range r {
+			tracker.Record(ts, consumedLimits)
+		}
+		return tracker
+	}
+	limitsPkg := reflect.TypeFor[limits.PreemptionLimitTracker]().PkgPath()
 	seeded := recorded{
-		expired: {"limit": "cq-a", "other-limit": "Global"},
-		now:     {"limit": "cq-b", "other-limit": "Global"},
+		expired: {"limit": consumed(limit, "cq-a"), "other-limit": consumed(otherLimit, "Global")},
+		now:     {"limit": consumed(limit, "cq-b"), "other-limit": consumed(otherLimit, "Global")},
 	}
 
 	cases := map[string]struct {
-		limit       *kueuealpha.PreemptionLimit
-		clientFuncs interceptor.Funcs
-		want        recorded
-		wantResult  reconcile.Result
-		wantErr     error
+		limit        *kueuealpha.PreemptionLimit
+		clientFuncs  interceptor.Funcs
+		wantLimits   []*kueuealpha.PreemptionLimit
+		wantRecorded recorded
+		wantResult   reconcile.Result
+		wantErr      error
 	}{
 		"existing limit: expired events are pruned, other limits are untouched": {
-			limit: limit,
-			want: recorded{
-				expired: {"other-limit": "Global"},
-				now:     {"limit": "cq-b", "other-limit": "Global"},
+			limit:      limit,
+			wantLimits: []*kueuealpha.PreemptionLimit{limit, otherLimit},
+			wantRecorded: recorded{
+				expired: {"other-limit": consumed(otherLimit, "Global")},
+				now:     {"limit": consumed(limit, "cq-b"), "other-limit": consumed(otherLimit, "Global")},
 			},
 			wantResult: reconcile.Result{RequeueAfter: time.Minute},
 		},
 		"deleted limit is forgotten, other limits are untouched": {
-			want: recorded{
-				expired: {"other-limit": "Global"},
-				now:     {"other-limit": "Global"},
+			wantLimits: []*kueuealpha.PreemptionLimit{otherLimit},
+			wantRecorded: recorded{
+				expired: {"other-limit": consumed(otherLimit, "Global")},
+				now:     {"other-limit": consumed(otherLimit, "Global")},
 			},
 		},
 		"get error other than NotFound is returned and the tracker is unchanged": {
@@ -79,8 +99,9 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 					return errTest
 				},
 			},
-			want:    seeded,
-			wantErr: errTest,
+			wantLimits:   []*kueuealpha.PreemptionLimit{limit, otherLimit},
+			wantRecorded: seeded,
+			wantErr:      errTest,
 		},
 	}
 	for name, tc := range cases {
@@ -90,13 +111,7 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			if tc.limit != nil {
 				builder = builder.WithObjects(tc.limit)
 			}
-			// Pruning changes no count, only the stored events, so the whole tracker
-			// is compared. Outside the limits package a tracker can only be filled
-			// through Record, which the limits package tests cover.
-			tracker := limits.NewPreemptionLimitTracker()
-			for ts, consumedLimits := range seeded {
-				tracker.Record(ts, consumedLimits)
-			}
+			tracker := newTracker([]*kueuealpha.PreemptionLimit{limit, otherLimit}, seeded)
 			reconciler := NewPreemptionLimitReconciler(builder.Build(), tracker, nil)
 			reconciler.clock = testingclock.NewFakeClock(now)
 
@@ -107,13 +122,10 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			if diff := cmp.Diff(tc.wantResult, gotResult); diff != "" {
 				t.Errorf("Unexpected Reconcile() result (-want,+got):\n%s", diff)
 			}
-			wantTracker := limits.NewPreemptionLimitTracker()
-			for ts, consumedLimits := range tc.want {
-				wantTracker.Record(ts, consumedLimits)
-			}
-			if diff := cmp.Diff(wantTracker, tracker,
-				cmp.AllowUnexported(limits.PreemptionLimitTracker{}),
+			if diff := cmp.Diff(newTracker(tc.wantLimits, tc.wantRecorded), tracker,
+				cmp.Exporter(func(t reflect.Type) bool { return t.PkgPath() == limitsPkg }),
 				cmpopts.IgnoreTypes(sync.RWMutex{}),
+				cmpopts.EquateEmpty(),
 			); diff != "" {
 				t.Errorf("Unexpected tracked preemptions (-want,+got):\n%s", diff)
 			}

@@ -19,8 +19,10 @@ package policy
 import (
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	"sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/util/logging"
@@ -61,8 +63,18 @@ type PreemptionLimitReference string
 // (e.g. "Global", a ClusterQueue name, or "<namespace>/<workload-name>").
 type PreemptionLimitScopeValue string
 
-// ConsumedLimits maps each PreemptionLimit to the scope value consumed by a preemption.
-type ConsumedLimits map[PreemptionLimitReference]PreemptionLimitScopeValue
+// ConsumedLimit is the scope value of a PreemptionLimit consumed by a
+// preemption.
+type ConsumedLimit struct {
+	// UID and Scope identify the PreemptionLimit ScopeValue was resolved
+	// against, so it is not recorded once recreated or rescoped.
+	UID        types.UID
+	Scope      kueuealpha.PreemptionLimitScope
+	ScopeValue PreemptionLimitScopeValue
+}
+
+// ConsumedLimits maps each PreemptionLimit to the limit consumed by a preemption.
+type ConsumedLimits map[PreemptionLimitReference]ConsumedLimit
 
 func (d *ConfigurablePreemptionReasonData) EvictionMessage(preemptor *kueue.Workload) string {
 	return fmt.Sprintf("Preempted by %s because of preemption config %s rule %s",

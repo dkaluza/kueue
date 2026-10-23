@@ -1010,7 +1010,10 @@ func TestNewEvaluatorForPreemptionConfigConsumedLimits(t *testing.T) {
 		"limits with different scopes are consumed when the ConfigurablePreemptionLimits feature is enabled": {
 			enableLimits: true,
 			want: map[string]policy.ConsumedLimits{
-				"/a1": {"global": "Global", "per-preempted-cq": "a"},
+				"/a1": {
+					"global":           {UID: "global-uid", Scope: kueuealpha.GlobalPreemptionLimitScope, ScopeValue: "Global"},
+					"per-preempted-cq": {UID: "per-preempted-cq-uid", Scope: kueuealpha.PreemptedCQLimitScope, ScopeValue: "a"},
+				},
 			},
 		},
 		"no candidates are yielded when the PreemptionLimits cannot be listed": {
@@ -1029,8 +1032,8 @@ func TestNewEvaluatorForPreemptionConfigConsumedLimits(t *testing.T) {
 			cl := utiltesting.NewClientBuilder().
 				WithObjects(
 					preemptionConfig,
-					utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).Obj(),
-					utiltestingalpha.MakePreemptionLimit("per-preempted-cq", kueuealpha.PreemptedCQLimitScope).Obj(),
+					utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).UID("global-uid").Obj(),
+					utiltestingalpha.MakePreemptionLimit("per-preempted-cq", kueuealpha.PreemptedCQLimitScope).UID("per-preempted-cq-uid").Obj(),
 				).
 				WithLists(&kueue.WorkloadList{Items: []kueue.Workload{*admitted}}).
 				WithInterceptorFuncs(interceptor.Funcs{

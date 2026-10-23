@@ -407,3 +407,9 @@ func (pl *PreemptionLimitWrapper) LimitWindowSeconds(seconds int32) *PreemptionL
 	pl.Spec.LimitWindowSeconds = seconds
 	return pl
 }
+
+// UID sets the UID of the PreemptionLimit.
+func (pl *PreemptionLimitWrapper) UID(uid types.UID) *PreemptionLimitWrapper {
+	pl.ObjectMeta.UID = uid
+	return pl
+}

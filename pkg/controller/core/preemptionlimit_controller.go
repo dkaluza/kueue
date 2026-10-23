@@ -63,22 +63,20 @@ func NewPreemptionLimitReconciler(
 
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=preemptionlimits,verbs=get;list;watch
 
-// Reconcile prunes the preemption events of the PreemptionLimit that fell out
-// of its window, every preemptionLimitPruneInterval, and forgets all of them
-// once the PreemptionLimit is deleted.
+// Reconcile syncs the PreemptionLimit into the tracker every
+// preemptionLimitPruneInterval, and forgets it once deleted.
 func (r *PreemptionLimitReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var limit kueuealpha.PreemptionLimit
 	if err := r.client.Get(ctx, req.NamespacedName, &limit); err != nil {
 		if apierrors.IsNotFound(err) {
-			// A preemption picked before the deletion can still be recorded after
-			// it, leaving a few orphaned events until restart, or until a recreated
-			// PreemptionLimit with the same name prunes them. Accepted as negligible.
+			// Preemptions picked before the deletion but recorded after it are
+			// dropped by Record, as the PreemptionLimit is no longer tracked.
 			ctrl.LoggerFrom(ctx).V(2).Info("PreemptionLimit is deleted, forgetting its preemption events")
 			r.tracker.Forget(policy.PreemptionLimitReference(req.Name))
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	r.tracker.Prune(r.clock.Now(), &limit)
+	r.tracker.Sync(r.clock.Now(), &limit)
 	return ctrl.Result{RequeueAfter: preemptionLimitPruneInterval}, nil
 }
 
