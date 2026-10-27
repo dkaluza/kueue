@@ -44,7 +44,7 @@ type PreemptionLimiter struct {
 	expectations *expectations.Store
 	// recorded holds the preemptions recorded within the window of each limit
 	// when the limiter was created.
-	recorded preemptionCounts
+	recorded PreemptionCounts
 }
 
 // NewPreemptionLimiter returns a PreemptionLimiter for the PreemptionLimits that
@@ -75,7 +75,7 @@ func NewPreemptionLimiter(
 		log:          log,
 		matchers:     matchers,
 		expectations: preemptionExpectations,
-		recorded:     tracker.counts(now, applyingLimits),
+		recorded:     tracker.Counts(now, applyingLimits),
 	}, nil
 }
 

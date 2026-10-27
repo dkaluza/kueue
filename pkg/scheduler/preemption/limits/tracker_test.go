@@ -38,14 +38,14 @@ func TestPreemptionLimitTrackerCounts(t *testing.T) {
 	cases := map[string]struct {
 		events map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events
 		limits []*kueuealpha.PreemptionLimit
-		want   preemptionCounts
+		want   PreemptionCounts
 	}{
 		"events before the window are not counted": {
 			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
 				"per-cq": {"cq-a": {cutoff.Add(-time.Hour), cutoff.Add(-time.Nanosecond), cutoff.Add(time.Nanosecond), now}},
 			},
 			limits: []*kueuealpha.PreemptionLimit{perCQ},
-			want: preemptionCounts{
+			want: PreemptionCounts{
 				"per-cq": {"cq-a": 2},
 			},
 		},
@@ -54,7 +54,7 @@ func TestPreemptionLimitTrackerCounts(t *testing.T) {
 				"per-cq": {"cq-a": {cutoff}},
 			},
 			limits: []*kueuealpha.PreemptionLimit{perCQ},
-			want: preemptionCounts{
+			want: PreemptionCounts{
 				"per-cq": {"cq-a": 1},
 			},
 		},
@@ -67,7 +67,7 @@ func TestPreemptionLimitTrackerCounts(t *testing.T) {
 				perCQ,
 				utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(3600).Obj(),
 			},
-			want: preemptionCounts{
+			want: PreemptionCounts{
 				"global": {"Global": 1},
 			},
 		},
@@ -76,7 +76,7 @@ func TestPreemptionLimitTrackerCounts(t *testing.T) {
 				"per-cq": {"cq-a": {now}, "cq-b": {now, now}},
 			},
 			limits: []*kueuealpha.PreemptionLimit{perCQ},
-			want: preemptionCounts{
+			want: PreemptionCounts{
 				"per-cq": {"cq-a": 1, "cq-b": 2},
 			},
 		},
@@ -91,7 +91,7 @@ func TestPreemptionLimitTrackerCounts(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tracker := NewPreemptionLimitTracker()
 			tracker.events = tc.events
-			got := tracker.counts(now, tc.limits)
+			got := tracker.Counts(now, tc.limits)
 			if diff := cmp.Diff(tc.want, got, cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("Unexpected counts (-want,+got):\n%s", diff)
 			}

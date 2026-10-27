@@ -273,6 +273,7 @@ rules:
   - dynamicquotaorchestrators/status
   - localqueues/status
   - multikueueclusters/status
+  - preemptionlimits/status
   - workloads/status
   verbs:
   - get
