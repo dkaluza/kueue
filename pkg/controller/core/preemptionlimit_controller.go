@@ -74,7 +74,7 @@ func NewPreemptionLimitReconciler(
 // Reconcile prunes the preemption events of the PreemptionLimit that fell out
 // of its window, every preemptionLimitPruneInterval, and forgets all of them
 // once the PreemptionLimit is deleted.
-// Additionaly it updates PreemptionLimit.Status field based on current
+// Additionally it updates PreemptionLimit.Status field based on current
 // state of preemptions.
 func (r *PreemptionLimitReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var limit kueuealpha.PreemptionLimit
@@ -94,8 +94,10 @@ func (r *PreemptionLimitReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	limit.Status = r.preemptionLimitStatus(now, &limit)
 	if err := r.client.Status().Update(ctx, &limit); err != nil {
-		// "NotFound" error will be handled on retry.
-		return ctrl.Result{}, err
+		// "NotFound" signals that PreemptionLimit was deleted during processing
+		// and deletion will be handled by a separate dedicated Reconcile which will
+		// clean up in-memory state.
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	return ctrl.Result{RequeueAfter: preemptionLimitPruneInterval}, nil
