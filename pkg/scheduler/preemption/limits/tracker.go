@@ -31,10 +31,10 @@ const pruneGracePeriod = time.Minute
 
 // PreemptionCounts holds a number of preemptions per PreemptionLimit and scope value.
 // A missing entry counts as 0.
-type PreemptionCounts map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]int32
+type preemptionCounts map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]int32
 
 // add adds n preemptions for limit and scopeValue.
-func (c PreemptionCounts) add(limit policy.PreemptionLimitReference, scopeValue policy.PreemptionLimitScopeValue, n int32) {
+func (c preemptionCounts) add(limit policy.PreemptionLimitReference, scopeValue policy.PreemptionLimitScopeValue, n int32) {
 	if c[limit] == nil {
 		c[limit] = make(map[policy.PreemptionLimitScopeValue]int32)
 	}
@@ -103,8 +103,8 @@ func windowStart(now time.Time, limit *kueuealpha.PreemptionLimit) time.Time {
 
 // Counts returns a consistent snapshot of the preemptions recorded for limits
 // within their windows [windowStart, now]. Scope values with 0 events are omitted.
-func (t *PreemptionLimitTracker) Counts(now time.Time, limits []*kueuealpha.PreemptionLimit) PreemptionCounts {
-	counts := make(PreemptionCounts, len(limits))
+func (t *PreemptionLimitTracker) Counts(now time.Time, limits []*kueuealpha.PreemptionLimit) preemptionCounts {
+	counts := make(preemptionCounts, len(limits))
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	for _, limit := range limits {

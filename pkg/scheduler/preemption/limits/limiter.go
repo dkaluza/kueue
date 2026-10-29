@@ -44,7 +44,7 @@ type PreemptionLimiter struct {
 	expectations *expectations.Store
 	// recorded holds the preemptions recorded within the window of each limit
 	// when the limiter was created.
-	recorded PreemptionCounts
+	recorded preemptionCounts
 }
 
 // NewPreemptionLimiter returns a PreemptionLimiter for the PreemptionLimits that

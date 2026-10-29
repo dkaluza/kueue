@@ -29,7 +29,7 @@ import (
 type PreemptionLimitBudget struct {
 	limiter *PreemptionLimiter
 	// taken holds the preemptions taken from this budget.
-	taken PreemptionCounts
+	taken preemptionCounts
 }
 
 // NewBudget returns an empty budget for one pass of candidate selection.
@@ -37,7 +37,7 @@ type PreemptionLimitBudget struct {
 func (l *PreemptionLimiter) NewBudget() *PreemptionLimitBudget {
 	return &PreemptionLimitBudget{
 		limiter: l,
-		taken:   PreemptionCounts{},
+		taken:   preemptionCounts{},
 	}
 }
 

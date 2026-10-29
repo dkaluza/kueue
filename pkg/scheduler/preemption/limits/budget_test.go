@@ -52,12 +52,12 @@ func TestPreemptionLimitBudgetTryConsume(t *testing.T) {
 	cases := map[string]struct {
 		preemptionLimits []kueuealpha.PreemptionLimit
 		events           map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events
-		taken            PreemptionCounts
+		taken            preemptionCounts
 		// target, when set, replaces the default target.
 		target       *workload.Info
 		wantConsumed policy.ConsumedLimits
 		wantOK       bool
-		wantTaken    PreemptionCounts
+		wantTaken    preemptionCounts
 	}{
 		"target consuming no limit is allowed and takes nothing": {
 			wantOK: true,
@@ -66,28 +66,28 @@ func TestPreemptionLimitBudgetTryConsume(t *testing.T) {
 			preemptionLimits: []kueuealpha.PreemptionLimit{*global.Obj()},
 			wantConsumed:     policy.ConsumedLimits{"global": "Global"},
 			wantOK:           true,
-			wantTaken:        PreemptionCounts{"global": {"Global": 1}},
+			wantTaken:        preemptionCounts{"global": {"Global": 1}},
 		},
 		"consumed limit is added to preemptions already taken from the budget": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{*global.Obj()},
-			taken:            PreemptionCounts{"global": {"Global": 2}},
+			taken:            preemptionCounts{"global": {"Global": 2}},
 			wantConsumed:     policy.ConsumedLimits{"global": "Global"},
 			wantOK:           true,
-			wantTaken:        PreemptionCounts{"global": {"Global": 3}},
+			wantTaken:        preemptionCounts{"global": {"Global": 3}},
 		},
 		"budget allows preemption if there are fewer recorded events than the limit": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{*global.Obj()},
 			events:           twoRecordedGlobalEvents,
 			wantConsumed:     policy.ConsumedLimits{"global": "Global"},
 			wantOK:           true,
-			wantTaken:        PreemptionCounts{"global": {"Global": 1}},
+			wantTaken:        preemptionCounts{"global": {"Global": 1}},
 		},
 		"target is blocked when recorded and taken preemptions reach the limit": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{*global.Obj()},
 			events:           twoRecordedGlobalEvents,
-			taken:            PreemptionCounts{"global": {"Global": 1}},
+			taken:            preemptionCounts{"global": {"Global": 1}},
 			wantOK:           false,
-			wantTaken:        PreemptionCounts{"global": {"Global": 1}},
+			wantTaken:        preemptionCounts{"global": {"Global": 1}},
 		},
 		"limit of 0 blocks the target": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{*global.Clone().Limit(0).Obj()},
@@ -97,30 +97,30 @@ func TestPreemptionLimitBudgetTryConsume(t *testing.T) {
 			preemptionLimits: []kueuealpha.PreemptionLimit{*global.Obj(), *perCQ.Obj()},
 			wantConsumed:     policy.ConsumedLimits{"global": "Global", "per-cq": "preempted-cq"},
 			wantOK:           true,
-			wantTaken: PreemptionCounts{
+			wantTaken: preemptionCounts{
 				"global": {"Global": 1},
 				"per-cq": {"preempted-cq": 1},
 			},
 		},
 		"exhausted limit blocks the target and takes nothing from other limits": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{*global.Obj(), *perCQ.Obj()},
-			taken:            PreemptionCounts{"per-cq": {"preempted-cq": 1}},
+			taken:            preemptionCounts{"per-cq": {"preempted-cq": 1}},
 			wantOK:           false,
-			wantTaken:        PreemptionCounts{"per-cq": {"preempted-cq": 1}},
+			wantTaken:        preemptionCounts{"per-cq": {"preempted-cq": 1}},
 		},
 		"scope values of a limit have independent budgets": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{*perCQ.Obj()},
-			taken:            PreemptionCounts{"per-cq": {"other-cq": 1}},
+			taken:            preemptionCounts{"per-cq": {"other-cq": 1}},
 			wantConsumed:     policy.ConsumedLimits{"per-cq": "preempted-cq"},
 			wantOK:           true,
-			wantTaken:        PreemptionCounts{"per-cq": {"other-cq": 1, "preempted-cq": 1}},
+			wantTaken:        preemptionCounts{"per-cq": {"other-cq": 1, "preempted-cq": 1}},
 		},
 		"target with preemption in progress is allowed even when budget is exhausted": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{*global.Obj()},
-			taken:            PreemptionCounts{"global": {"Global": 3}},
+			taken:            preemptionCounts{"global": {"Global": 3}},
 			target:           &workload.Info{Obj: targetWl.Clone().EvictedAt(now).Obj(), ClusterQueue: "preempted-cq"},
 			wantOK:           true,
-			wantTaken:        PreemptionCounts{"global": {"Global": 3}},
+			wantTaken:        preemptionCounts{"global": {"Global": 3}},
 		},
 	}
 	for name, tc := range cases {
