@@ -74,6 +74,8 @@ func NewPreemptionLimitReconciler(
 // Reconcile prunes the preemption events of the PreemptionLimit that fell out
 // of its window, every preemptionLimitPruneInterval, and forgets all of them
 // once the PreemptionLimit is deleted.
+// Additionaly it updates PreemptionLimit.Status field based on current
+// state of preemptions.
 func (r *PreemptionLimitReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var limit kueuealpha.PreemptionLimit
 	if err := r.client.Get(ctx, req.NamespacedName, &limit); err != nil {
@@ -109,7 +111,7 @@ func (r *PreemptionLimitReconciler) preemptionLimitStatus(now time.Time, limit *
 	for scope, count := range counts[policy.PreemptionLimitReference(limit.Name)] {
 		status.Counts = append(status.Counts, kueuealpha.PreemptionLimitCount{
 			// No need to additionally validate name length because it is created from
-			// existing validated values and maxLength is calculaated as combination of
+			// existing validated values and maxLength is calculated as combination of
 			// existing limits.
 			Name:  string(scope),
 			Value: count,
