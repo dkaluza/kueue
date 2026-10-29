@@ -108,11 +108,14 @@ func (r *PreemptionLimitReconciler) preemptionLimitStatus(now time.Time, limit *
 	status := kueuealpha.PreemptionLimitStatus{
 		LastUpdateTime: &lastUpdateTime,
 	}
-	for scope, count := range counts[policy.PreemptionLimitReference(limit.Name)] {
+
+	countsForLimit := counts[policy.PreemptionLimitReference(limit.Name)]
+	status.Counts = make([]kueuealpha.PreemptionLimitCount, 0, len(countsForLimit))
+	for scope, count := range countsForLimit {
 		status.Counts = append(status.Counts, kueuealpha.PreemptionLimitCount{
 			// No need to additionally validate name length because it is created from
 			// existing validated values and maxLength is calculated as combination of
-			// existing limits.
+			// existing name length constraints.
 			Name:  string(scope),
 			Value: count,
 		})
