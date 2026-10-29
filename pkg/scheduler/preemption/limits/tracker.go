@@ -29,7 +29,7 @@ import (
 // "now" lags slightly behind still find every event they count.
 const pruneGracePeriod = time.Minute
 
-// PreemptionCounts holds a number of preemptions per PreemptionLimit and scope value.
+// preemptionCounts holds a number of preemptions per PreemptionLimit and scope value.
 // A missing entry counts as 0.
 type preemptionCounts map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]int32
 
