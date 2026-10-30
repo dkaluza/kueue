@@ -19,8 +19,10 @@ package policy
 import (
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	"sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/util/logging"
@@ -61,8 +63,30 @@ type PreemptionLimitReference string
 // (e.g. "Global", a ClusterQueue name, or "<namespace>/<workload-name>").
 type PreemptionLimitScopeValue string
 
-// ConsumedLimits maps each PreemptionLimit to the scope value consumed by a preemption.
-type ConsumedLimits map[PreemptionLimitReference]PreemptionLimitScopeValue
+// ConsumedLimit is the scope value of a PreemptionLimit consumed by a
+// preemption.
+type ConsumedLimit struct {
+	ScopeValue PreemptionLimitScopeValue
+	// uid and generation identify the version of the PreemptionLimit
+	// ScopeValue was resolved against (see IsStaleFor).
+	uid        types.UID
+	generation int64
+}
+
+// NewConsumedLimit returns the scopeValue of limit consumed by a preemption.
+func NewConsumedLimit(limit *kueuealpha.PreemptionLimit, scopeValue PreemptionLimitScopeValue) ConsumedLimit {
+	return ConsumedLimit{ScopeValue: scopeValue, uid: limit.UID, generation: limit.Generation}
+}
+
+// IsStaleFor reports whether c was resolved against another PreemptionLimit
+// than the one with uid, or against a generation older than minGeneration,
+// so it no longer counts for the events tracked for that PreemptionLimit.
+func (c ConsumedLimit) IsStaleFor(uid types.UID, minGeneration int64) bool {
+	return c.uid != uid || c.generation < minGeneration
+}
+
+// ConsumedLimits maps each PreemptionLimit to the limit consumed by a preemption.
+type ConsumedLimits map[PreemptionLimitReference]ConsumedLimit
 
 func (d *ConfigurablePreemptionReasonData) EvictionMessage(preemptor *kueue.Workload) string {
 	return fmt.Sprintf("Preempted by %s because of preemption config %s rule %s",

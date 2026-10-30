@@ -279,7 +279,15 @@ func runScheduleTestCases(t *testing.T, cfg scheduleTestConfig, cases map[string
 						schedulerOpts = append(schedulerOpts, WithRefillBudget(*tc.refillBudget))
 					}
 					if fg[features.ConfigurablePreemptionLimits] {
-						schedulerOpts = append(schedulerOpts, WithPreemptionLimitTracker(limits.NewPreemptionLimitTracker()))
+						// The scheduler only enforces the PreemptionLimits synced by the
+						// PreemptionLimitReconciler.
+						tracker := limits.NewPreemptionLimitTracker()
+						for _, obj := range tc.objects {
+							if limit, ok := obj.(*kueuealpha.PreemptionLimit); ok {
+								tracker.Sync(cfg.fakeClock.Now(), limit)
+							}
+						}
+						schedulerOpts = append(schedulerOpts, WithPreemptionLimitTracker(tracker))
 					}
 					scheduler := New(qManager, cqCache, cl, recorder, schedulerOpts...)
 					wg := sync.WaitGroup{}

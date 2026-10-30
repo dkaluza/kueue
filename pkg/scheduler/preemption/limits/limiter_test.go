@@ -43,32 +43,32 @@ func TestNewPreemptionLimiter(t *testing.T) {
 	config := utiltestingalpha.MakePreemptionConfig("config").Label("tier", "gold").Obj()
 
 	cases := map[string]struct {
-		preemptionLimits []kueuealpha.PreemptionLimit
-		want             []policy.PreemptionLimitReference
-		wantErr          *selectorError
+		limits  trackedLimits
+		want    []policy.PreemptionLimitReference
+		wantErr *selectorError
 	}{
 		"limits applying to the config are kept by name, the others are dropped": {
-			preemptionLimits: []kueuealpha.PreemptionLimit{
-				*utiltestingalpha.MakePreemptionLimit("any-config", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).Obj(),
-				*utiltestingalpha.MakePreemptionLimit("silver", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
-					ConfigSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"tier": "silver"}}).Obj(),
-			},
+			limits: tracked(
+				trackedLimit(utiltestingalpha.MakePreemptionLimit("any-config", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).Obj(), nil),
+				trackedLimit(utiltestingalpha.MakePreemptionLimit("silver", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
+					ConfigSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"tier": "silver"}}).Obj(), nil),
+			),
 			want: []policy.PreemptionLimitReference{"any-config"},
 		},
 		"invalid limit is an error": {
-			preemptionLimits: []kueuealpha.PreemptionLimit{
-				*utiltestingalpha.MakePreemptionLimit("any-config", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).Obj(),
-				*utiltestingalpha.MakePreemptionLimit("invalid", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
+			limits: tracked(
+				trackedLimit(utiltestingalpha.MakePreemptionLimit("any-config", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).Obj(), nil),
+				trackedLimit(utiltestingalpha.MakePreemptionLimit("invalid", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
 					ConfigSelector(&metav1.LabelSelector{
 						MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "tier", Operator: "invalid"}},
-					}).Obj(),
-			},
+					}).Obj(), nil),
+			),
 			wantErr: &selectorError{PreemptionLimit: "invalid", Selector: "configSelector"},
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			limiter, err := NewPreemptionLimiter(logr.Discard(), NewPreemptionLimitTracker().Snapshot(time.Time{}, tc.preemptionLimits), config, preemptexpectations.New())
+			limiter, err := NewPreemptionLimiter(logr.Discard(), snapshotOf(time.Time{}, tc.limits), config, preemptexpectations.New())
 			if diff := diffSelectorError(tc.wantErr, err); diff != "" {
 				t.Fatalf("NewPreemptionLimiter() unexpected error (-want,+got):\n%s", diff)
 			}
@@ -88,10 +88,11 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 	targetCQ := &schdcache.ClusterQueueSnapshot{Name: "preempted-cq", Labels: map[string]string{"side": "preempted"}}
 	preemptor := &workload.Info{Obj: utiltestingapi.MakeWorkload("preemptor", "ns").Obj(), ClusterQueue: "preempting-cq"}
 	target := &workload.Info{Obj: utiltestingapi.MakeWorkload("target", "ns").UID("target").Obj(), ClusterQueue: "preempted-cq"}
-	globalLimit := *utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).Obj()
+	globalLimit := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).Obj()
+	preemptedWorkloadLimit := utiltestingalpha.MakePreemptionLimit("preempted-workload", kueuealpha.PreemptedWorkloadLimitScope).LimitWindowSeconds(60).Obj()
 
 	cases := map[string]struct {
-		preemptionLimits []kueuealpha.PreemptionLimit
+		limits trackedLimits
 		// target, when set, replaces the default target.
 		target *workload.Info
 		// unobservedEviction marks the eviction of the target as issued but not observed yet.
@@ -101,28 +102,31 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 	}{
 		"no limits consume nothing": {},
 		"limits matching the ClusterQueues are consumed together, the others are not": {
-			preemptionLimits: []kueuealpha.PreemptionLimit{
-				globalLimit,
-				*utiltestingalpha.MakePreemptionLimit("preempted-workload", kueuealpha.PreemptedWorkloadLimitScope).LimitWindowSeconds(60).Obj(),
-				*utiltestingalpha.MakePreemptionLimit("other-cqs", kueuealpha.PreemptedCQLimitScope).LimitWindowSeconds(60).
-					PreemptedClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"side": "other"}}).Obj(),
+			limits: tracked(
+				trackedLimit(globalLimit, nil),
+				trackedLimit(preemptedWorkloadLimit, nil),
+				trackedLimit(utiltestingalpha.MakePreemptionLimit("other-cqs", kueuealpha.PreemptedCQLimitScope).LimitWindowSeconds(60).
+					PreemptedClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"side": "other"}}).Obj(), nil),
+			),
+			want: policy.ConsumedLimits{
+				"global":             policy.NewConsumedLimit(globalLimit, "Global"),
+				"preempted-workload": policy.NewConsumedLimit(preemptedWorkloadLimit, "ns/target"),
 			},
-			want: policy.ConsumedLimits{"global": "Global", "preempted-workload": "ns/target"},
 		},
 		"evicted target consumes nothing": {
-			preemptionLimits: []kueuealpha.PreemptionLimit{globalLimit},
+			limits: tracked(trackedLimit(globalLimit, nil)),
 			target: &workload.Info{
 				Obj:          utiltestingapi.MakeWorkload("target", "ns").UID("target").EvictedAt(time.Now()).Obj(),
 				ClusterQueue: "preempted-cq",
 			},
 		},
 		"target with an unobserved eviction consumes nothing": {
-			preemptionLimits:   []kueuealpha.PreemptionLimit{globalLimit},
+			limits:             tracked(trackedLimit(globalLimit, nil)),
 			unobservedEviction: true,
 		},
 		"nil limiter consumes nothing": {
-			preemptionLimits: []kueuealpha.PreemptionLimit{globalLimit},
-			nilLimiter:       true,
+			limits:     tracked(trackedLimit(globalLimit, nil)),
+			nilLimiter: true,
 		},
 	}
 	for name, tc := range cases {
@@ -132,7 +136,7 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 			if tc.unobservedEviction {
 				preemptionExpectations.ExpectUIDs(log, client.ObjectKeyFromObject(target.Obj), []types.UID{target.Obj.UID})
 			}
-			limiter, err := NewPreemptionLimiter(log, NewPreemptionLimitTracker().Snapshot(time.Time{}, tc.preemptionLimits),
+			limiter, err := NewPreemptionLimiter(log, snapshotOf(time.Time{}, tc.limits),
 				utiltestingalpha.MakePreemptionConfig("config").Obj(), preemptionExpectations)
 			if err != nil {
 				t.Fatalf("NewPreemptionLimiter() unexpected error: %v", err)
@@ -141,7 +145,7 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 				limiter = nil
 			}
 			got := limiter.consumedLimits(preemptor, cmp.Or(tc.target, target), preemptorCQ, targetCQ)
-			if diff := gocmp.Diff(tc.want, got, cmpopts.EquateEmpty()); diff != "" {
+			if diff := gocmp.Diff(tc.want, got, gocmp.AllowUnexported(policy.ConsumedLimit{}), cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("Unexpected consumed limits (-want,+got):\n%s", diff)
 			}
 		})
@@ -150,47 +154,43 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 
 func TestPreemptionLimiterAllowance(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	perCQ := *utiltestingalpha.MakePreemptionLimit("per-cq", kueuealpha.PreemptedCQLimitScope).
+	perCQLimit := utiltestingalpha.MakePreemptionLimit("per-cq", kueuealpha.PreemptedCQLimitScope).
 		Limit(3).LimitWindowSeconds(60).Obj()
+	perCQRef := policy.PreemptionLimitReference(perCQLimit.Name)
 
 	cases := map[string]struct {
-		events map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events
+		limits trackedLimits
 		// changeTracker, when set, changes the tracker after the limiter is created.
 		changeTracker func(*PreemptionLimitTracker)
 		want          int32
 	}{
 		"allowance is the limit minus the preemptions within the window": {
-			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
-				"per-cq": {"cq-a": {now.Add(-2 * time.Minute), now.Add(-30 * time.Second)}},
-			},
-			want: 2,
+			limits: tracked(trackedLimit(perCQLimit, scopeEvents{"cq-a": {now.Add(-2 * time.Minute), now.Add(-30 * time.Second)}})),
+			want:   2,
 		},
 		"allowance returns the current limit for the proper scope value": {
-			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
-				"per-cq": {"cq-b": {now, now}},
-			},
-			want: 3,
+			limits: tracked(trackedLimit(perCQLimit, scopeEvents{"cq-b": {now, now}})),
+			want:   3,
 		},
 		"allowance doesn't change when the tracker forgets the limit after the limiter is created": {
-			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
-				"per-cq": {"cq-a": {now, now}},
-			},
-			changeTracker: func(tracker *PreemptionLimitTracker) { tracker.Forget("per-cq") },
+			limits:        tracked(trackedLimit(perCQLimit, scopeEvents{"cq-a": {now, now}})),
+			changeTracker: func(tracker *PreemptionLimitTracker) { tracker.Forget(perCQRef) },
 			want:          1,
 		},
 		"allowance doesn't change when the tracker prunes the limit after the limiter is created": {
-			events: map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events{
-				"per-cq": {"cq-a": {now.Add(-50 * time.Second), now}},
-			},
+			limits: tracked(trackedLimit(perCQLimit, scopeEvents{"cq-a": {now.Add(-50 * time.Second), now}})),
 			changeTracker: func(tracker *PreemptionLimitTracker) {
 				// Drops all the events, as a prune with a shrunk window would.
-				tracker.Prune(now.Add(time.Hour), utiltestingalpha.MakePreemptionLimit("per-cq", kueuealpha.PreemptedCQLimitScope).LimitWindowSeconds(1).Obj())
+				shrunk := perCQLimit.DeepCopy()
+				shrunk.Spec.LimitWindowSeconds = 1
+				tracker.Sync(now.Add(time.Hour), shrunk)
 			},
 			want: 1,
 		},
 		"allowance doesn't change when the tracker records preemptions after the limiter is created": {
+			limits: tracked(trackedLimit(perCQLimit, nil)),
 			changeTracker: func(tracker *PreemptionLimitTracker) {
-				tracker.Record(now, policy.ConsumedLimits{"per-cq": "cq-a"})
+				tracker.Record(now, policy.ConsumedLimits{perCQRef: policy.NewConsumedLimit(perCQLimit, "cq-a")})
 			},
 			want: 3,
 		},
@@ -198,17 +198,17 @@ func TestPreemptionLimiterAllowance(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			tracker := NewPreemptionLimitTracker()
-			if tc.events != nil {
-				tracker.events = tc.events
+			if tc.limits != nil {
+				tracker.limits = tc.limits
 			}
-			limiter, err := NewPreemptionLimiter(logr.Discard(), tracker.Snapshot(now, []kueuealpha.PreemptionLimit{perCQ}), utiltestingalpha.MakePreemptionConfig("config").Obj(), preemptexpectations.New())
+			limiter, err := NewPreemptionLimiter(logr.Discard(), tracker.Snapshot(now), utiltestingalpha.MakePreemptionConfig("config").Obj(), preemptexpectations.New())
 			if err != nil {
 				t.Fatalf("NewPreemptionLimiter() unexpected error: %v", err)
 			}
 			if tc.changeTracker != nil {
 				tc.changeTracker(tracker)
 			}
-			if got := limiter.allowance("per-cq", "cq-a"); got != tc.want {
+			if got := limiter.allowance(perCQRef, "cq-a"); got != tc.want {
 				t.Errorf("allowance() = %d, want %d", got, tc.want)
 			}
 		})

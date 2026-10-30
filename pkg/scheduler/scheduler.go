@@ -363,7 +363,7 @@ func (s *Scheduler) schedule(ctx context.Context) wait.SpeedSignal {
 		return wait.SlowDown
 	}
 	logSnapshotIfVerbose(log, snapshot)
-	s.preemptor.SnapshotPreemptionLimits(ctx)
+	s.preemptor.SnapshotPreemptionLimits()
 	log.V(2).Info("Snapshot taken", "duration", s.clock.Since(phaseStartTime))
 
 	// 3. Calculate requirements (resource flavors, borrowing) for admitting workloads.

@@ -38,7 +38,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	config "sigs.k8s.io/kueue/apis/config/v1beta2"
-	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/controller/constants"
@@ -222,19 +221,14 @@ func (p *Preemptor) buildContext(
 }
 
 // SnapshotPreemptionLimits takes the snapshot of the PreemptionLimits enforced in the
-// current scheduling cycle. If they can't be listed, the cycle skips configurable
-// preemptions.
-func (p *Preemptor) SnapshotPreemptionLimits(ctx context.Context) {
+// current scheduling cycle, from the PreemptionLimitTracker only, so that the
+// PreemptionLimits are consistent with their recorded preemptions.
+func (p *Preemptor) SnapshotPreemptionLimits() {
 	p.limitsSnapshot = nil
 	if !features.Enabled(features.ConfigurablePreemptionLimits) {
 		return
 	}
-	preemptionLimitList := &kueuealpha.PreemptionLimitList{}
-	if err := p.client.List(ctx, preemptionLimitList); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to list PreemptionLimits, skipping configurable preemptions in this scheduling cycle")
-		return
-	}
-	p.limitsSnapshot = p.preemptionLimitTracker.Snapshot(p.clock.Now(), preemptionLimitList.Items)
+	p.limitsSnapshot = p.preemptionLimitTracker.Snapshot(p.clock.Now())
 }
 
 // Resolved once per attempt: both algorithms evaluate several triggers, and the

@@ -42,7 +42,7 @@ type PreemptionLimitsSnapshot struct {
 // Record updates the snapshot by incrementing the recorded preemptions for every
 // PreemptionLimit and scope value in consumedLimits.
 func (s *PreemptionLimitsSnapshot) Record(consumedLimits policy.ConsumedLimits) {
-	for limit, scopeValue := range consumedLimits {
-		s.recorded.add(limit, scopeValue, 1)
+	for limit, consumed := range consumedLimits {
+		s.recorded.add(limit, consumed.ScopeValue, 1)
 	}
 }

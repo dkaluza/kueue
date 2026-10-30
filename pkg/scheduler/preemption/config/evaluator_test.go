@@ -1010,6 +1010,10 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 		LimitWindowSeconds(windowSeconds)
 	perPreemptedCQLimit := utiltestingalpha.MakePreemptionLimit("per-preempted-cq", kueuealpha.PreemptedCQLimitScope).
 		LimitWindowSeconds(windowSeconds)
+	globalConsumed := policy.NewConsumedLimit(globalLimit.Obj(), "Global")
+	perPreemptedCQConsumed := func(cq policy.PreemptionLimitScopeValue) policy.ConsumedLimit {
+		return policy.NewConsumedLimit(perPreemptedCQLimit.Obj(), cq)
+	}
 
 	cases := map[string]struct {
 		disableLimits    bool
@@ -1031,8 +1035,8 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 				*unitWl.Clone().Name("b1").SimpleReserveQuota("b", "default", now).Obj(),
 			},
 			want: map[string]policy.ConsumedLimits{
-				"/a1": {"global": "Global", "per-preempted-cq": "a"},
-				"/b1": {"global": "Global", "per-preempted-cq": "b"},
+				"/a1": {"global": globalConsumed, "per-preempted-cq": perPreemptedCQConsumed("a")},
+				"/b1": {"global": globalConsumed, "per-preempted-cq": perPreemptedCQConsumed("b")},
 			},
 		},
 		"limit of 0 blocks every candidate": {
@@ -1051,8 +1055,8 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 				*unitWl.Clone().Name("b1").SimpleReserveQuota("b", "default", now).Obj(),
 			},
 			want: map[string]policy.ConsumedLimits{
-				"/a1": {"per-preempted-cq": "a"},
-				"/b1": {"per-preempted-cq": "b"},
+				"/a1": {"per-preempted-cq": perPreemptedCQConsumed("a")},
+				"/b1": {"per-preempted-cq": perPreemptedCQConsumed("b")},
 			},
 		},
 		"limits not selecting the PreemptionConfig are neither enforced nor attached": {
@@ -1078,9 +1082,9 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 			},
 			unobservedEvictions: []string{"a2", "a4"},
 			want: map[string]policy.ConsumedLimits{
-				"/a1": {"global": "Global"},
+				"/a1": {"global": globalConsumed},
 				"/a2": nil,
-				"/a3": {"global": "Global"},
+				"/a3": {"global": globalConsumed},
 				"/a4": nil,
 			},
 		},
@@ -1091,7 +1095,7 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
 			},
 			want: map[string]policy.ConsumedLimits{
-				"/a1": {"global": "Global"},
+				"/a1": {"global": globalConsumed},
 			},
 		},
 		"budget starts afresh at each FindCandidates call": {
@@ -1102,7 +1106,7 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 			},
 			findCandidatesTwice: true,
 			want: map[string]policy.ConsumedLimits{
-				"/a1": {"global": "Global"},
+				"/a1": {"global": globalConsumed},
 			},
 		},
 		"limits are neither enforced nor attached when the ConfigurablePreemptionLimits feature is disabled": {
@@ -1160,10 +1164,15 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 					t.Fatalf("Couldn't add ClusterQueue to cache: %v", err)
 				}
 			}
-			// The scheduling cycle has no snapshot if it failed to list the PreemptionLimits.
+			// The scheduling cycle has no snapshot if it was taken while the
+			// ConfigurablePreemptionLimits feature was disabled.
 			var preemptionLimits *limits.PreemptionLimitsSnapshot
 			if !tc.noSnapshot {
-				preemptionLimits = limits.NewPreemptionLimitTracker().Snapshot(now, tc.preemptionLimits)
+				tracker := limits.NewPreemptionLimitTracker()
+				for i := range tc.preemptionLimits {
+					tracker.Sync(now, &tc.preemptionLimits[i])
+				}
+				preemptionLimits = tracker.Snapshot(now)
 			}
 			preemptionExpectations := preemptexpectations.New()
 			for _, name := range tc.unobservedEvictions {
@@ -1194,7 +1203,7 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 			}
 
 			// Then
-			if diff := cmp.Diff(tc.want, got); diff != "" {
+			if diff := cmp.Diff(tc.want, got, cmp.AllowUnexported(policy.ConsumedLimit{})); diff != "" {
 				t.Errorf("Unexpected consumed limits (-want,+got):\n%s", diff)
 			}
 		})

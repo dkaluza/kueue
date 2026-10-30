@@ -54,7 +54,7 @@ func (b *PreemptionLimitBudget) TryConsume(
 	}
 	if limit, ok := b.take(consumedLimits); !ok {
 		b.limiter.log.V(5).Info("Skipping preemption candidate exceeding a PreemptionLimit",
-			"candidate", klog.KObj(target.Obj), "preemptionLimit", limit, "scopeValue", consumedLimits[limit])
+			"candidate", klog.KObj(target.Obj), "preemptionLimit", limit, "scopeValue", consumedLimits[limit].ScopeValue)
 		return nil, false
 	}
 	return consumedLimits, true
@@ -63,13 +63,13 @@ func (b *PreemptionLimitBudget) TryConsume(
 // take consumes one preemption from each limit in consumedLimits, or takes
 // nothing and returns a limit that has no budget left.
 func (b *PreemptionLimitBudget) take(consumedLimits policy.ConsumedLimits) (policy.PreemptionLimitReference, bool) {
-	for limit, scopeValue := range consumedLimits {
-		if b.remaining(limit, scopeValue) <= 0 {
+	for limit, consumed := range consumedLimits {
+		if b.remaining(limit, consumed.ScopeValue) <= 0 {
 			return limit, false
 		}
 	}
-	for limit, scopeValue := range consumedLimits {
-		b.taken.add(limit, scopeValue, 1)
+	for limit, consumed := range consumedLimits {
+		b.taken.add(limit, consumed.ScopeValue, 1)
 	}
 	return "", true
 }
