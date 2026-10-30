@@ -105,10 +105,12 @@ func windowStart(now time.Time, limit *kueuealpha.PreemptionLimit) time.Time {
 // within their windows ending at now. The caller must not modify preemptionLimits.
 func (t *PreemptionLimitTracker) Snapshot(now time.Time, preemptionLimits []kueuealpha.PreemptionLimit) *PreemptionLimitsSnapshot {
 	limits := make([]*kueuealpha.PreemptionLimit, len(preemptionLimits))
+	limitByName := make(map[policy.PreemptionLimitReference]*kueuealpha.PreemptionLimit, len(preemptionLimits))
 	for i := range preemptionLimits {
 		limits[i] = &preemptionLimits[i]
+		limitByName[policy.PreemptionLimitReference(preemptionLimits[i].Name)] = &preemptionLimits[i]
 	}
-	return &PreemptionLimitsSnapshot{limits: limits, recorded: t.Counts(now, limits)}
+	return &PreemptionLimitsSnapshot{limits: limits, limitByName: limitByName, recorded: t.Counts(now, limits)}
 }
 
 // Counts returns a consistent snapshot of the preemptions recorded for limits

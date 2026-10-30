@@ -237,6 +237,18 @@ func (p *Preemptor) SnapshotPreemptionLimits(ctx context.Context) {
 	p.limitsSnapshot = p.preemptionLimitTracker.Snapshot(p.clock.Now(), preemptionLimitList.Items)
 }
 
+// WithinPreemptionLimits reports whether the configurable preemptions in targets
+// fit within the remaining PreemptionLimits in the current snapshot.
+func (p *Preemptor) WithinPreemptionLimits(targets []*Target) bool {
+	var consumedLimits []policy.ConsumedLimits
+	for _, target := range targets {
+		if data := target.ConfigurablePreemptionReasonData; data != nil {
+			consumedLimits = append(consumedLimits, data.ConsumedLimits)
+		}
+	}
+	return p.limitsSnapshot.WithinLimits(consumedLimits)
+}
+
 // Resolved once per attempt: both algorithms evaluate several triggers, and the
 // PreemptionConfig must not be re-read for each of them.
 // Returns nil if the ConfigurablePreemptions feature is disabled, or the ClusterQueue

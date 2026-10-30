@@ -5444,3 +5444,65 @@ func TestSnapshotPreemptionLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestWithinPreemptionLimits(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	global := *utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).Limit(1).LimitWindowSeconds(60).Obj()
+	configurable := func(consumedLimits policy.ConsumedLimits) *Target {
+		return &Target{ConfigurablePreemptionReasonData: &policy.ConfigurablePreemptionReasonData{ConsumedLimits: consumedLimits}}
+	}
+	consumingGlobal := configurable(policy.ConsumedLimits{"global": "Global"})
+
+	cases := map[string]struct {
+		noSnapshot       bool
+		recorded         []policy.ConsumedLimits
+		targets          []*Target
+		wantWithinLimits bool
+	}{
+		"configurable target within remaining limit": {
+			targets:          []*Target{consumingGlobal},
+			wantWithinLimits: true,
+		},
+		"configurable targets together exceeding remaining limit": {
+			targets:          []*Target{consumingGlobal, consumingGlobal},
+			wantWithinLimits: false,
+		},
+		"configurable target exceeding limit after a recorded preemption": {
+			recorded:         []policy.ConsumedLimits{{"global": "Global"}},
+			targets:          []*Target{consumingGlobal},
+			wantWithinLimits: false,
+		},
+		"classical target does not count toward configurable target limit": {
+			targets:          []*Target{{Reason: kueue.InClusterQueueReason}, consumingGlobal},
+			wantWithinLimits: true,
+		},
+		"classical target is allowed when limits snapshot is nil": {
+			noSnapshot:       true,
+			targets:          []*Target{{Reason: kueue.InClusterQueueReason}},
+			wantWithinLimits: true,
+		},
+		"configurable target consuming no limits does not count": {
+			targets:          []*Target{configurable(nil), consumingGlobal},
+			wantWithinLimits: true,
+		},
+		"configurable target consuming no limits is blocked when limits snapshot is nil": {
+			noSnapshot:       true,
+			targets:          []*Target{configurable(nil)},
+			wantWithinLimits: false,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			preemptor := &Preemptor{}
+			if !tc.noSnapshot {
+				preemptor.limitsSnapshot = limits.NewPreemptionLimitTracker().Snapshot(now, []kueuealpha.PreemptionLimit{global})
+				for _, consumed := range tc.recorded {
+					preemptor.limitsSnapshot.Record(consumed)
+				}
+			}
+			if got := preemptor.WithinPreemptionLimits(tc.targets); got != tc.wantWithinLimits {
+				t.Errorf("WithinPreemptionLimits() = %v, want %v", got, tc.wantWithinLimits)
+			}
+		})
+	}
+}

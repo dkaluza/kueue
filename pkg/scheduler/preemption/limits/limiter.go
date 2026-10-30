@@ -90,8 +90,3 @@ func (l *PreemptionLimiter) preemptionInProgress(target *workload.Info) bool {
 	return workloadevict.IsEvicted(target.Obj) ||
 		!l.expectations.Satisfied(l.log, client.ObjectKeyFromObject(target.Obj))
 }
-
-// allowance returns the limit minus the preemptions recorded within its window.
-func (l *PreemptionLimiter) allowance(limit policy.PreemptionLimitReference, scopeValue policy.PreemptionLimitScopeValue) int32 {
-	return l.matchers[limit].limit.Spec.Limit - l.snapshot.recorded[limit][scopeValue]
-}

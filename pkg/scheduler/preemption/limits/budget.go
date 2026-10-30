@@ -74,7 +74,7 @@ func (b *PreemptionLimitBudget) take(consumedLimits policy.ConsumedLimits) (poli
 	return "", true
 }
 
-// remaining returns the limiter's allowance minus the preemptions taken from this budget.
+// remaining returns how many more preemptions can be taken from this budget for limit and scopeValue.
 func (b *PreemptionLimitBudget) remaining(limit policy.PreemptionLimitReference, scopeValue policy.PreemptionLimitScopeValue) int32 {
-	return b.limiter.allowance(limit, scopeValue) - b.taken[limit][scopeValue]
+	return b.limiter.snapshot.allowance(limit, scopeValue) - b.taken[limit][scopeValue]
 }
