@@ -106,6 +106,19 @@ type PreemptionLimitSpec struct {
 	// +optional
 	PreemptedClusterQueueSelector *metav1.LabelSelector `json:"preemptedClusterQueueSelector,omitempty"`
 
+	// ruleNames restricts the limit to specific rule names within matching PreemptionConfigs.
+	// In case when preemption candidate was returned by multiple preemption rules, only the first rule
+	// is considered when matching with limit.
+	// If not set, it applies to all rules.
+	//
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=63
+	// +kubebuilder:validation:items:Pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+	RuleNames []string `json:"ruleNames,omitempty"`
+
 	// limit defines how many preemption events can occur within the given time window.
 	// An event is defined as a confirmed (preemptor, preempted) eviction pair.
 	// Setting limit to 0 blocks all preemptions under this limit's scope.

@@ -200,6 +200,20 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              ruleNames:
+                description: |-
+                  ruleNames restricts the limit to specific rule names within matching PreemptionConfigs.
+                  In case when preemption candidate was returned by multiple preemption rules, only the first rule
+                  is considered when matching with limit.
+                  If not set, it applies to all rules.
+                items:
+                  maxLength: 63
+                  minLength: 1
+                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
               scope:
                 description: scope specifies the entity boundary for this preemption
                   limit.
