@@ -109,6 +109,16 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 			},
 			want: policy.ConsumedLimits{"global": "Global", "preempted-workload": "ns/target"},
 		},
+		"limits matching the ruleName are consumed, limits for other rules are not": {
+			preemptionLimits: []kueuealpha.PreemptionLimit{
+				globalLimit,
+				*utiltestingalpha.MakePreemptionLimit("matching-rule", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
+					RuleNames("otherRule", "ruleReference").Obj(),
+				*utiltestingalpha.MakePreemptionLimit("other-rule", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
+					RuleNames("otherRule").Obj(),
+			},
+			want: policy.ConsumedLimits{"global": "Global", "matching-rule": "Global"},
+		},
 		"evicted target consumes nothing": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{globalLimit},
 			target: &workload.Info{
@@ -140,7 +150,7 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 			if tc.nilLimiter {
 				limiter = nil
 			}
-			got := limiter.consumedLimits(preemptor, cmp.Or(tc.target, target), preemptorCQ, targetCQ)
+			got := limiter.consumedLimits(preemptor, cmp.Or(tc.target, target), "ruleReference", preemptorCQ, targetCQ)
 			if diff := gocmp.Diff(tc.want, got, cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("Unexpected consumed limits (-want,+got):\n%s", diff)
 			}

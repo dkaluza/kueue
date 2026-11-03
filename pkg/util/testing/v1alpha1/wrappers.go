@@ -439,3 +439,9 @@ func (pl *PreemptionLimitWrapper) PreemptedClusterQueueSelector(selector *metav1
 	pl.Spec.PreemptedClusterQueueSelector = selector
 	return pl
 }
+
+// RuleNames sets the rule names the limit applies to.
+func (pl *PreemptionLimitWrapper) RuleNames(ruleNames ...string) *PreemptionLimitWrapper {
+	pl.Spec.RuleNames = ruleNames
+	return pl
+}

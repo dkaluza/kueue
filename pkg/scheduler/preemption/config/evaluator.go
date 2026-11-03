@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/go-logr/logr"
@@ -203,7 +204,9 @@ func (p *PreemptionEvaluator) iterateOverCandidates(
 	preemptorCQ := snapshot.ClusterQueue(p.preemptor.ClusterQueue)
 	for _, candidate := range candidates {
 		targetCQ := snapshot.ClusterQueue(candidate.WlInfo.ClusterQueue)
-		consumedLimits, withinLimits := budget.TryConsume(p.preemptor, candidate.WlInfo, preemptorCQ, targetCQ)
+		ruleReference := slices.Collect(maps.Keys(candidate.RuleNameToSelectorIndexes))[0]
+
+		consumedLimits, withinLimits := budget.TryConsume(p.preemptor, candidate.WlInfo, ruleReference, preemptorCQ, targetCQ)
 		if !withinLimits {
 			continue
 		}
@@ -340,10 +343,13 @@ func (p *PreemptionEvaluator) addMatchingCandidates(
 
 		for _, wlInfo := range targetCq.Workloads {
 			if matchesWorkload(filter, wlInfo) && classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
-				candidate := p.ensureCandidate(seen, candidates, wlInfo)
+				candidate := p.ensureCandidate(seen, candidates, wlInfo, ruleReference)
 
-				indexes := candidate.RuleNameToSelectorIndexes[ruleReference]
-				candidate.RuleNameToSelectorIndexes[ruleReference] = append(indexes, selectorIndex)
+				// TODO: update to have a dedicated field for firstMatchesRule instead of map
+				indexes, found := candidate.RuleNameToSelectorIndexes[ruleReference]
+				if found {
+					candidate.RuleNameToSelectorIndexes[ruleReference] = append(indexes, selectorIndex)
+				}
 			}
 		}
 	}
@@ -353,6 +359,7 @@ func (p *PreemptionEvaluator) ensureCandidate(
 	seen map[types.UID]int,
 	candidates *[]*configurableCandidate,
 	wlInfo *workload.Info,
+	ruleReference policy.PreemptionConfigRuleReference,
 ) *configurableCandidate {
 	if existingIndex, found := seen[wlInfo.Obj.UID]; found {
 		return (*candidates)[existingIndex]
@@ -362,7 +369,7 @@ func (p *PreemptionEvaluator) ensureCandidate(
 	candidate := &configurableCandidate{
 		WlInfo:                    wlInfo,
 		ConfigName:                policy.PreemptionConfigReference(p.config.Name),
-		RuleNameToSelectorIndexes: map[policy.PreemptionConfigRuleReference][]int{},
+		RuleNameToSelectorIndexes: map[policy.PreemptionConfigRuleReference][]int{ruleReference: {}},
 	}
 
 	*candidates = append(*candidates, candidate)

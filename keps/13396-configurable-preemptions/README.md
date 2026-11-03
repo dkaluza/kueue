@@ -889,13 +889,15 @@ The `Message` for both conditions will be the same (following the existing preem
 - preemptor workload reference,
 - preemption config name, rule name, and selector indices which resulted in choosing this workload as a candidate.
 
+If a candidate workload matches multiple rules, it is attributed to the first matching rule in `spec.rules`, and only that rule is reported.
+
 Example message:
 `Preempted by <preemptor> because of preemption config <preemptionConfig> rule <ruleName>/<selectorIndex>`
 
 In case of multiple selectors which are triggered within one rule, they will be concatenated with ",".
 
 Example message:
-`Preempted by <preemptor> because of preemption config <preemptionConfig> rule <ruleName_1>/<selectorIndex_1>,<selectorIndex_2>,...,<selectorIndex_n>; <ruleName_2>/<selectorIndex_1>,<selectorIndex_2>,...,<selectorIndex_n>; ...`
+`Preempted by <preemptor> because of preemption config <preemptionConfig> rule <ruleName>/<selectorIndex_1>,<selectorIndex_2>,...,<selectorIndex_n>`
 
 
 ### Test Plan

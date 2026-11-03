@@ -222,7 +222,7 @@ status:
     message: "Preempted by default/hero-job-xyz because of preemption config hero-workloads-preemption-config rule hero-preempt-lower-priority/0"
 ```
 
-If multiple selectors within a rule triggered the candidate's preemption, their indices are concatenated with commas (e.g., `rule hero-preempt-lower-priority/0,1`). If multiple rules contributed, they are separated with semicolons.
+If multiple selectors within a rule triggered the candidate's preemption, their indices are concatenated with commas (e.g., `rule hero-preempt-lower-priority/0,1`). If multiple rules match the candidate, only the first matching rule in `spec.rules` is reported.
 
 ### Metrics
 

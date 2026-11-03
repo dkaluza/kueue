@@ -634,7 +634,7 @@ func TestPreemptionEvaluatorSelectorIndexes(t *testing.T) {
 				candidate("a2", map[policy.PreemptionConfigRuleReference][]int{"test": {0}}),
 			},
 		},
-		"Candidate match multiple rules": {
+		"Candidate match multiple rules, only first rule picked": {
 			clusterQueues: baseCqs,
 			config: *utiltestingalpha.MakePreemptionConfig(configName).
 				Rule("test1", kueuealpha.Always,
@@ -650,11 +650,11 @@ func TestPreemptionEvaluatorSelectorIndexes(t *testing.T) {
 			preemptorWl: unitWl.Clone().Name("a-incoming").Obj(),
 			preemptorCq: "a",
 			wantCandidates: []*configurableCandidate{
-				candidate("a1", map[policy.PreemptionConfigRuleReference][]int{"test1": {0}, "test2": {0}}),
-				candidate("a2", map[policy.PreemptionConfigRuleReference][]int{"test1": {0}, "test2": {0}}),
+				candidate("a1", map[policy.PreemptionConfigRuleReference][]int{"test1": {0}}),
+				candidate("a2", map[policy.PreemptionConfigRuleReference][]int{"test1": {0}}),
 			},
 		},
-		"Candidate match multiple rules related to the trigger": {
+		"Candidate match multiple rules related to the trigger, only first rule picked": {
 			clusterQueues: baseCqs,
 			config: *utiltestingalpha.MakePreemptionConfig(configName).
 				Rule("test1", kueuealpha.Always,
@@ -674,8 +674,8 @@ func TestPreemptionEvaluatorSelectorIndexes(t *testing.T) {
 			preemptorCq: "a",
 			trigger:     kueuealpha.InsufficientQuota,
 			wantCandidates: []*configurableCandidate{
-				candidate("a1", map[policy.PreemptionConfigRuleReference][]int{"test2": {0}, "test3": {0}}),
-				candidate("a2", map[policy.PreemptionConfigRuleReference][]int{"test2": {0}, "test3": {0}}),
+				candidate("a1", map[policy.PreemptionConfigRuleReference][]int{"test2": {0}}),
+				candidate("a2", map[policy.PreemptionConfigRuleReference][]int{"test2": {0}}),
 			},
 		},
 		"Candidates match multiple selectors": {
@@ -1004,6 +1004,9 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 		).
 		Rule("any-cluster-queue-rule", kueuealpha.InsufficientQuota,
 			utiltestingalpha.MakeCandidateSelector(kueuealpha.AnyClusterQueue).Obj(),
+		).
+		Rule("second-any-cluster-queue-rule", kueuealpha.InsufficientQuota,
+			utiltestingalpha.MakeCandidateSelector(kueuealpha.AnyClusterQueue).Obj(),
 		).Obj()
 	unitWl := *utiltestingapi.MakeWorkload("unit", "").Request(corev1.ResourceCPU, "1")
 	globalLimit := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).
@@ -1065,6 +1068,39 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 			},
 			want: map[string]policy.ConsumedLimits{
 				"/a1": nil,
+			},
+		},
+		"limits with ruleNames only apply to matching rules": {
+			preemptionLimits: []kueuealpha.PreemptionLimit{
+				*utiltestingalpha.MakePreemptionLimit("low-tier-limit", kueuealpha.GlobalPreemptionLimitScope).
+					LimitWindowSeconds(windowSeconds).RuleNames("low-tier-rule").Limit(10).Obj(),
+				*utiltestingalpha.MakePreemptionLimit("any-cq-limit", kueuealpha.GlobalPreemptionLimitScope).
+					LimitWindowSeconds(windowSeconds).RuleNames("any-cluster-queue-rule").Limit(10).Obj(),
+				*utiltestingalpha.MakePreemptionLimit("other-rule-limit", kueuealpha.GlobalPreemptionLimitScope).
+					LimitWindowSeconds(windowSeconds).RuleNames("other-rule").Limit(0).Obj(),
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").Label("tier", "low").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			want: map[string]policy.ConsumedLimits{
+				"/a1": {"low-tier-limit": "Global"},
+				"/a2": {"any-cq-limit": "Global"},
+			},
+		},
+		"candidate matching multiple rules only consumes and respects limits of the first matching rule": {
+			preemptionLimits: []kueuealpha.PreemptionLimit{
+				*utiltestingalpha.MakePreemptionLimit("first-rule-limit", kueuealpha.GlobalPreemptionLimitScope).
+					LimitWindowSeconds(windowSeconds).RuleNames("any-cluster-queue-rule").Limit(1).Obj(),
+				*utiltestingalpha.MakePreemptionLimit("second-rule-limit", kueuealpha.GlobalPreemptionLimitScope).
+					LimitWindowSeconds(windowSeconds).RuleNames("second-any-cluster-queue-rule").Limit(0).Obj(),
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			want: map[string]policy.ConsumedLimits{
+				"/a1": {"first-rule-limit": "Global"},
 			},
 		},
 		"candidates whose preemption is in progress are yielded without limits and take no budget": {
@@ -1136,6 +1172,22 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 				*unitWl.Clone().Name("a1").SimpleReserveQuota("a", "default", now).Obj(),
 			},
 			want: map[string]policy.ConsumedLimits{},
+		},
+		"candidate skipped due to Always rule limit can still be selected by InsufficientQuota rule": {
+			preemptionLimits: []kueuealpha.PreemptionLimit{
+				*utiltestingalpha.MakePreemptionLimit("low-tier-limit", kueuealpha.GlobalPreemptionLimitScope).
+					LimitWindowSeconds(windowSeconds).RuleNames("low-tier-rule").Limit(1).Obj(),
+				*utiltestingalpha.MakePreemptionLimit("any-cq-limit", kueuealpha.GlobalPreemptionLimitScope).
+					LimitWindowSeconds(windowSeconds).RuleNames("any-cluster-queue-rule").Limit(10).Obj(),
+			},
+			admitted: []kueue.Workload{
+				*unitWl.Clone().Name("a1").Label("tier", "low").SimpleReserveQuota("a", "default", now).Obj(),
+				*unitWl.Clone().Name("a2").Label("tier", "low").SimpleReserveQuota("a", "default", now).Obj(),
+			},
+			want: map[string]policy.ConsumedLimits{
+				"/a1": {"low-tier-limit": "Global"},
+				"/a2": {"any-cq-limit": "Global"},
+			},
 		},
 	}
 	for name, tc := range cases {
