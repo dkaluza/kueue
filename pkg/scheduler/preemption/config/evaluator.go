@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 
 	"github.com/go-logr/logr"
@@ -204,8 +203,7 @@ func (p *PreemptionEvaluator) iterateOverCandidates(
 	preemptorCQ := snapshot.ClusterQueue(p.preemptor.ClusterQueue)
 	for _, candidate := range candidates {
 		targetCQ := snapshot.ClusterQueue(candidate.WlInfo.ClusterQueue)
-		ruleReference := slices.Collect(maps.Keys(candidate.RuleNameToSelectorIndexes))[0]
-
+		ruleReference := candidate.MatchedRule.RuleReference
 		consumedLimits, withinLimits := budget.TryConsume(p.preemptor, candidate.WlInfo, ruleReference, preemptorCQ, targetCQ)
 		if !withinLimits {
 			continue
@@ -215,9 +213,9 @@ func (p *PreemptionEvaluator) iterateOverCandidates(
 			Reason:       kueue.ConfigurablePreemptionReason,
 			WorkloadCq:   targetCQ,
 			ConfigurablePreemptionReasonData: &policy.ConfigurablePreemptionReasonData{
-				ConfigName:                candidate.ConfigName,
-				RuleNameToSelectorIndexes: candidate.RuleNameToSelectorIndexes,
-				ConsumedLimits:            consumedLimits,
+				ConfigName:     candidate.ConfigName,
+				MatchedRule:    candidate.MatchedRule,
+				ConsumedLimits: consumedLimits,
 			},
 		}) {
 			return true
@@ -249,9 +247,9 @@ func (p *PreemptionEvaluator) hasConditionalRules() bool {
 // configurableCandidate represents a workload selected for configurable preemption
 // together with the configuration rules and selectors that selected it.
 type configurableCandidate struct {
-	WlInfo                    *workload.Info
-	ConfigName                policy.PreemptionConfigReference
-	RuleNameToSelectorIndexes map[policy.PreemptionConfigRuleReference][]int
+	WlInfo      *workload.Info
+	ConfigName  policy.PreemptionConfigReference
+	MatchedRule policy.MatchedRule
 }
 
 // orderedCandidates returns the candidates selected by the rules of the
@@ -344,11 +342,10 @@ func (p *PreemptionEvaluator) addMatchingCandidates(
 		for _, wlInfo := range targetCq.Workloads {
 			if matchesWorkload(filter, wlInfo) && classical.WorkloadUsesResources(wlInfo, flavorsNeedPreemption) {
 				candidate := p.ensureCandidate(seen, candidates, wlInfo, ruleReference)
-
-				// TODO: update to have a dedicated field for firstMatchesRule instead of map
-				indexes, found := candidate.RuleNameToSelectorIndexes[ruleReference]
-				if found {
-					candidate.RuleNameToSelectorIndexes[ruleReference] = append(indexes, selectorIndex)
+				// Add another selector's index only if rule was already there. This ensures that
+				// only first matched rule is stored and updated.
+				if ruleReference == candidate.MatchedRule.RuleReference {
+					candidate.MatchedRule.SelectorIndexes = append(candidate.MatchedRule.SelectorIndexes, selectorIndex)
 				}
 			}
 		}
@@ -367,9 +364,12 @@ func (p *PreemptionEvaluator) ensureCandidate(
 
 	seen[wlInfo.Obj.UID] = len(*candidates)
 	candidate := &configurableCandidate{
-		WlInfo:                    wlInfo,
-		ConfigName:                policy.PreemptionConfigReference(p.config.Name),
-		RuleNameToSelectorIndexes: map[policy.PreemptionConfigRuleReference][]int{ruleReference: {}},
+		WlInfo:     wlInfo,
+		ConfigName: policy.PreemptionConfigReference(p.config.Name),
+		MatchedRule: policy.MatchedRule{
+			RuleReference:   ruleReference,
+			SelectorIndexes: []int{},
+		},
 	}
 
 	*candidates = append(*candidates, candidate)

@@ -599,11 +599,11 @@ func TestPreemptionEvaluatorSelectorIndexes(t *testing.T) {
 	}
 
 	unitWl := *utiltestingapi.MakeWorkload("unit", "").Request(corev1.ResourceCPU, "1")
-	candidate := func(name string, indexes map[policy.PreemptionConfigRuleReference][]int) *configurableCandidate {
+	candidate := func(name string, ruleReference policy.PreemptionConfigRuleReference, selectorIndexes []int) *configurableCandidate {
 		return &configurableCandidate{
-			WlInfo:                    wlInfoWithName(name),
-			ConfigName:                configName,
-			RuleNameToSelectorIndexes: indexes,
+			WlInfo:      wlInfoWithName(name),
+			ConfigName:  configName,
+			MatchedRule: policy.MatchedRule{RuleReference: ruleReference, SelectorIndexes: selectorIndexes},
 		}
 	}
 
@@ -630,8 +630,8 @@ func TestPreemptionEvaluatorSelectorIndexes(t *testing.T) {
 			preemptorWl: unitWl.Clone().Name("a-incoming").Obj(),
 			preemptorCq: "a",
 			wantCandidates: []*configurableCandidate{
-				candidate("a1", map[policy.PreemptionConfigRuleReference][]int{"test": {0}}),
-				candidate("a2", map[policy.PreemptionConfigRuleReference][]int{"test": {0}}),
+				candidate("a1", "test", []int{0}),
+				candidate("a2", "test", []int{0}),
 			},
 		},
 		"Candidate match multiple rules, only first rule picked": {
@@ -650,8 +650,8 @@ func TestPreemptionEvaluatorSelectorIndexes(t *testing.T) {
 			preemptorWl: unitWl.Clone().Name("a-incoming").Obj(),
 			preemptorCq: "a",
 			wantCandidates: []*configurableCandidate{
-				candidate("a1", map[policy.PreemptionConfigRuleReference][]int{"test1": {0}}),
-				candidate("a2", map[policy.PreemptionConfigRuleReference][]int{"test1": {0}}),
+				candidate("a1", "test1", []int{0}),
+				candidate("a2", "test1", []int{0}),
 			},
 		},
 		"Candidate match multiple rules related to the trigger, only first rule picked": {
@@ -674,8 +674,8 @@ func TestPreemptionEvaluatorSelectorIndexes(t *testing.T) {
 			preemptorCq: "a",
 			trigger:     kueuealpha.InsufficientQuota,
 			wantCandidates: []*configurableCandidate{
-				candidate("a1", map[policy.PreemptionConfigRuleReference][]int{"test2": {0}}),
-				candidate("a2", map[policy.PreemptionConfigRuleReference][]int{"test2": {0}}),
+				candidate("a1", "test2", []int{0}),
+				candidate("a2", "test2", []int{0}),
 			},
 		},
 		"Candidates match multiple selectors": {
@@ -692,8 +692,8 @@ func TestPreemptionEvaluatorSelectorIndexes(t *testing.T) {
 			preemptorWl: unitWl.Clone().Name("a-incoming").Obj(),
 			preemptorCq: "a",
 			wantCandidates: []*configurableCandidate{
-				candidate("a1", map[policy.PreemptionConfigRuleReference][]int{"test": {0, 1}}),
-				candidate("a2", map[policy.PreemptionConfigRuleReference][]int{"test": {0, 1}}),
+				candidate("a1", "test", []int{0, 1}),
+				candidate("a2", "test", []int{0, 1}),
 			},
 		},
 		"Candidate matches only the second selector": {
@@ -713,7 +713,7 @@ func TestPreemptionEvaluatorSelectorIndexes(t *testing.T) {
 			preemptorWl: unitWl.Clone().Name("a-incoming").Obj(),
 			preemptorCq: "a",
 			wantCandidates: []*configurableCandidate{
-				candidate("a1", map[policy.PreemptionConfigRuleReference][]int{"test": {1}}),
+				candidate("a1", "test", []int{1}),
 			},
 		},
 	}

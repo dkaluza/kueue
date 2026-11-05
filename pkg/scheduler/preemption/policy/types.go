@@ -18,13 +18,15 @@ package policy
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	"sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/util/logging"
-	stringsutils "sigs.k8s.io/kueue/pkg/util/strings"
+	sliceutils "sigs.k8s.io/kueue/pkg/util/slices"
 	"sigs.k8s.io/kueue/pkg/workload"
 )
 
@@ -41,11 +43,18 @@ type Target struct {
 
 type ConfigurablePreemptionReasonData struct {
 	ConfigName PreemptionConfigReference
-	// RuleNameToSelectorIndexes maps rule names to the indexes of selectors
-	// that the workload satisfies.
-	RuleNameToSelectorIndexes map[PreemptionConfigRuleReference][]int
+	// MatchedRule is a rule to which preemption candidate is attributed to.
+	// First rule is picked when multiple rules are satisfied.
+	MatchedRule MatchedRule
 	// ConsumedLimits are the PreemptionLimits consumed by preempting this target.
 	ConsumedLimits ConsumedLimits
+}
+
+type MatchedRule struct {
+	RuleReference PreemptionConfigRuleReference
+	// SelectorIndexes contains indexes of selectors under the preemption rule
+	// which were matched.
+	SelectorIndexes []int
 }
 
 // PreemptionConfigReference is a dedicated type to reference PreemptionConfig
@@ -65,10 +74,13 @@ type PreemptionLimitScopeValue string
 type ConsumedLimits map[PreemptionLimitReference]PreemptionLimitScopeValue
 
 func (d *ConfigurablePreemptionReasonData) EvictionMessage(preemptor *kueue.Workload) string {
-	return fmt.Sprintf("Preempted by %s because of preemption config %s rule %s",
+	itoa := func(n *int) string { return strconv.Itoa(*n) }
+
+	return fmt.Sprintf("Preempted by %s because of preemption config %s rule %s/%s",
 		workload.Key(preemptor),
 		d.ConfigName,
-		stringsutils.JoinMap(d.RuleNameToSelectorIndexes, "/", ",", "; "))
+		d.MatchedRule.RuleReference,
+		strings.Join(sliceutils.Map(d.MatchedRule.SelectorIndexes, itoa), ","))
 }
 
 type yieldCandidate = func(*Target) bool
