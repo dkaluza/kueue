@@ -459,3 +459,9 @@ func (pl *PreemptionLimitWrapper) Generation(generation int64) *PreemptionLimitW
 	pl.ObjectMeta.Generation = generation
 	return pl
 }
+
+// RuleNames sets the rule names the limit applies to.
+func (pl *PreemptionLimitWrapper) RuleNames(ruleNames ...string) *PreemptionLimitWrapper {
+	pl.Spec.RuleNames = ruleNames
+	return pl
+}

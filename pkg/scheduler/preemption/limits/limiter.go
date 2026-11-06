@@ -69,6 +69,7 @@ func NewPreemptionLimiter(
 // preemptor consumes, or no limits if target's preemption is already in progress.
 func (l *PreemptionLimiter) consumedLimits(
 	preemptor, target *workload.Info,
+	ruleReference policy.PreemptionConfigRuleReference,
 	preemptorCQ, targetCQ *schdcache.ClusterQueueSnapshot,
 ) policy.ConsumedLimits {
 	if l == nil || l.preemptionInProgress(target) {
@@ -76,7 +77,7 @@ func (l *PreemptionLimiter) consumedLimits(
 	}
 	consumedLimits := make(policy.ConsumedLimits)
 	for ref, matcher := range l.matchers {
-		if matcher.matchesClusterQueues(preemptorCQ, targetCQ) {
+		if matcher.matches(preemptorCQ, targetCQ, ruleReference) {
 			consumedLimits[ref] = policy.NewConsumedLimit(matcher.limit, matcher.scopeValue(preemptor, target))
 		}
 	}

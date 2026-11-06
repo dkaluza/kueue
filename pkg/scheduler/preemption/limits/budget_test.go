@@ -137,7 +137,7 @@ func TestPreemptionLimitBudgetTryConsume(t *testing.T) {
 				budget.taken = tc.taken
 			}
 
-			gotConsumed, ok := budget.TryConsume(preemptor, cmp.Or(tc.target, target), preemptorCQ, targetCQ)
+			gotConsumed, ok := budget.TryConsume(preemptor, cmp.Or(tc.target, target), "ruleReference", preemptorCQ, targetCQ)
 
 			if ok != tc.wantOK {
 				t.Errorf("TryConsume() ok = %v, want %v", ok, tc.wantOK)

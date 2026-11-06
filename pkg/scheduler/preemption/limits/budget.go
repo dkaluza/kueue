@@ -46,9 +46,10 @@ func (l *PreemptionLimiter) NewBudget() *PreemptionLimitBudget {
 // nothing and returns false.
 func (b *PreemptionLimitBudget) TryConsume(
 	preemptor, target *workload.Info,
+	ruleReference policy.PreemptionConfigRuleReference,
 	preemptorCQ, targetCQ *schdcache.ClusterQueueSnapshot,
 ) (policy.ConsumedLimits, bool) {
-	consumedLimits := b.limiter.consumedLimits(preemptor, target, preemptorCQ, targetCQ)
+	consumedLimits := b.limiter.consumedLimits(preemptor, target, ruleReference, preemptorCQ, targetCQ)
 	if len(consumedLimits) == 0 {
 		return nil, true
 	}
