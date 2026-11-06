@@ -90,6 +90,8 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 	target := &workload.Info{Obj: utiltestingapi.MakeWorkload("target", "ns").UID("target").Obj(), ClusterQueue: "preempted-cq"}
 	globalLimit := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).Obj()
 	preemptedWorkloadLimit := utiltestingalpha.MakePreemptionLimit("preempted-workload", kueuealpha.PreemptedWorkloadLimitScope).LimitWindowSeconds(60).Obj()
+	globalLimitWithRuleName := utiltestingalpha.MakePreemptionLimit("matching-rule", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
+		RuleNames("otherRule", "ruleReference").Obj()
 
 	cases := map[string]struct {
 		preemptionLimits []kueuealpha.PreemptionLimit
@@ -116,14 +118,13 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 		"limits matching the ruleName are consumed, limits for other rules are not": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{
 				*globalLimit,
-				*utiltestingalpha.MakePreemptionLimit("matching-rule", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
-					RuleNames("otherRule", "ruleReference").Obj(),
+				*globalLimitWithRuleName,
 				*utiltestingalpha.MakePreemptionLimit("other-rule", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
 					RuleNames("otherRule").Obj(),
 			},
 			want: policy.ConsumedLimits{
 				"global":        policy.NewConsumedLimit(globalLimit, policy.GlobalScopeValue),
-				"matching-rule": policy.NewConsumedLimit(globalLimit, policy.GlobalScopeValue)},
+				"matching-rule": policy.NewConsumedLimit(globalLimitWithRuleName, policy.GlobalScopeValue)},
 		},
 		"evicted target consumes nothing": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{*globalLimit},
