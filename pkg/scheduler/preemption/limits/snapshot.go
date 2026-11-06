@@ -17,12 +17,14 @@ limitations under the License.
 package limits
 
 import (
+	"time"
+
 	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
 )
 
-// PreemptionLimitsSnapshot captures PreemptionLimits and the current number of
-// preemptions against them at a single point in time. It allows to reason about
+// PreemptionLimitsSnapshot captures PreemptionLimits and the preemption events
+// recorded against them at a single point in time. It allows to reason about
 // the current limits state in one scheduling cycle without danger of concurrent
 // modification of PreemptionLimits or currently tracked preemptions, caused by
 // user actions (e.g. delete of a limit resource).
@@ -33,16 +35,21 @@ import (
 // scheduling cycle.
 type PreemptionLimitsSnapshot struct {
 	limitByName map[policy.PreemptionLimitReference]*kueuealpha.PreemptionLimit
-	// recorded holds the preemptions recorded within the window of each limit when
-	// the snapshot was taken, plus ones added with `Record` method.
-	recorded preemptionCounts
+	// events holds the preemption timestamps within the window of each limit when
+	// the snapshot was taken, plus ones added via Record.
+	events map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]events
 }
 
-// Record updates the snapshot by incrementing the recorded preemptions for every
-// PreemptionLimit and scope value in consumedLimits.
-func (s *PreemptionLimitsSnapshot) Record(consumedLimits policy.ConsumedLimits) {
+// Record records a preemption at ts in the snapshot for every PreemptionLimit
+// and scope value in consumedLimits.
+func (s *PreemptionLimitsSnapshot) Record(ts time.Time, consumedLimits policy.ConsumedLimits) {
 	for limit, consumed := range consumedLimits {
-		s.recorded.add(limit, consumed.ScopeValue, 1)
+		scopes, found := s.events[limit]
+		if !found {
+			scopes = make(map[policy.PreemptionLimitScopeValue]events)
+			s.events[limit] = scopes
+		}
+		scopes[consumed.ScopeValue] = scopes[consumed.ScopeValue].insert(ts)
 	}
 }
 
@@ -71,5 +78,23 @@ func (s *PreemptionLimitsSnapshot) allowance(limit policy.PreemptionLimitReferen
 	if !found {
 		return 0
 	}
-	return preemptionLimit.Spec.Limit - s.recorded[limit][scopeValue]
+	return preemptionLimit.Spec.Limit - int32(len(s.events[limit][scopeValue]))
+}
+
+// nextSlotTime returns the earliest time when enough recorded events expire to
+// allow count additional preemptions for limit and scopeValue.
+//
+// It returns nil if they are already allowed, or if waiting for events to
+// expire is never enough.
+func (s *PreemptionLimitsSnapshot) nextSlotTime(limit policy.PreemptionLimitReference, scopeValue policy.PreemptionLimitScopeValue, count int32) *time.Time {
+	preemptionLimit, found := s.limitByName[limit]
+	if !found || count <= 0 || count > preemptionLimit.Spec.Limit {
+		return nil
+	}
+	recorded := s.events[limit][scopeValue]
+	index := len(recorded) + int(count-preemptionLimit.Spec.Limit) - 1
+	if index < 0 {
+		return nil
+	}
+	return new(recorded[index].Add(time.Duration(preemptionLimit.Spec.LimitWindowSeconds) * time.Second))
 }

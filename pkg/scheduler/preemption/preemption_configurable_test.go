@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/component-base/featuregate"
 	clocktesting "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 
@@ -40,6 +41,7 @@ import (
 	"sigs.k8s.io/kueue/pkg/resources"
 	"sigs.k8s.io/kueue/pkg/scheduler/flavorassigner"
 	preemptexpectations "sigs.k8s.io/kueue/pkg/scheduler/preemption/expectations"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/limits"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
 	utilslices "sigs.k8s.io/kueue/pkg/util/slices"
 	utiltas "sigs.k8s.io/kueue/pkg/util/tas"
@@ -1147,6 +1149,167 @@ func TestPreemptionOracleConfigurablePreemptions(t *testing.T) {
 			}
 			if diff := cmp.Diff(beforeSnapshot, snapshot, snapCmpOpts); diff != "" {
 				t.Errorf("Snapshot was modified (-initial,+end):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestGetTargetsWithStrategyRetryAt(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	preemptConfig := utiltestingalpha.MakePreemptionConfig("cfg").
+		Rule("always-low", kueuealpha.Always,
+			utiltestingalpha.MakeCandidateSelector(kueuealpha.WithinClusterQueue).
+				LabelSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"tier": "low"}}).Obj(),
+		).
+		Rule("quota-any", kueuealpha.InsufficientQuota,
+			utiltestingalpha.MakeCandidateSelector(kueuealpha.AnyClusterQueue).Obj(),
+		).Obj()
+	perCQLimit := utiltestingalpha.MakePreemptionLimit("per-cq", kueuealpha.PreemptedCQLimitScope).
+		Limit(1).LimitWindowSeconds(60).Obj()
+	clusterQueues := []*kueue.ClusterQueue{
+		utiltestingapi.MakeClusterQueue("cq-a").Cohort("cohort").
+			Annotation(kueuealpha.PreemptionConfigNameAnnotation, "cfg").
+			ResourceGroup(
+				*utiltestingapi.MakeFlavorQuotas("on-demand").Resource(corev1.ResourceCPU, "1").Obj(),
+				*utiltestingapi.MakeFlavorQuotas("spot").Resource(corev1.ResourceCPU, "1").Obj(),
+			).Obj(),
+		utiltestingapi.MakeClusterQueue("cq-b").Cohort("cohort").
+			ResourceGroup(
+				*utiltestingapi.MakeFlavorQuotas("on-demand").Resource(corev1.ResourceCPU, "1").Obj(),
+				*utiltestingapi.MakeFlavorQuotas("spot").Resource(corev1.ResourceCPU, "1").Obj(),
+			).Obj(),
+	}
+	admitted := []kueue.Workload{
+		*utiltestingapi.MakeWorkload("v-a", "default").UID("v-a").Label("tier", "low").
+			Request(corev1.ResourceCPU, "1").SimpleReserveQuota("cq-a", "on-demand", now).Obj(),
+		*utiltestingapi.MakeWorkload("v-b", "default").UID("v-b").
+			Request(corev1.ResourceCPU, "1").SimpleReserveQuota("cq-b", "on-demand", now).Obj(),
+		*utiltestingapi.MakeWorkload("v-spot", "default").UID("v-spot").
+			Request(corev1.ResourceCPU, "1").SimpleReserveQuota("cq-b", "spot", now).Obj(),
+	}
+
+	type searchAttempt struct {
+		flavor           kueue.ResourceFlavorReference
+		strategyAccepted []bool
+	}
+
+	cases := map[string]struct {
+		recordedAt  map[policy.PreemptionLimitScopeValue]time.Time
+		attempts    []searchAttempt
+		wantTargets []string
+		wantRetryAt *time.Time
+	}{
+		"TakeRetryAt returns nil when no strategies run": {},
+		"failed candidate search records earliest retry time and TakeRetryAt clears it": {
+			recordedAt: map[policy.PreemptionLimitScopeValue]time.Time{
+				"cq-a": now.Add(-45 * time.Second),
+				"cq-b": now.Add(-20 * time.Second),
+			},
+			attempts: []searchAttempt{
+				{flavor: "on-demand", strategyAccepted: []bool{true}},
+			},
+			wantRetryAt: new(now.Add(15 * time.Second)),
+		},
+		"TakeRetryAt returns earliest retry time across multiple failed searches": {
+			recordedAt: map[policy.PreemptionLimitScopeValue]time.Time{
+				"cq-a": now.Add(-45 * time.Second),
+				"cq-b": now.Add(-20 * time.Second),
+			},
+			attempts: []searchAttempt{
+				{flavor: "on-demand", strategyAccepted: []bool{true}},
+				{flavor: "spot", strategyAccepted: []bool{true}},
+			},
+			wantRetryAt: new(now.Add(15 * time.Second)),
+		},
+		"rejected strategy verification preserves retry time from skipped candidates": {
+			recordedAt: map[policy.PreemptionLimitScopeValue]time.Time{
+				"cq-a": now.Add(-45 * time.Second),
+			},
+			attempts: []searchAttempt{
+				{flavor: "on-demand", strategyAccepted: []bool{false}},
+			},
+			wantRetryAt: new(now.Add(15 * time.Second)),
+		},
+		"failed earlier strategy does not set retry time when subsequent strategy succeeds": {
+			recordedAt: map[policy.PreemptionLimitScopeValue]time.Time{
+				"cq-a": now.Add(-45 * time.Second),
+			},
+			attempts: []searchAttempt{
+				{flavor: "on-demand", strategyAccepted: []bool{false, true}},
+			},
+			wantTargets: []string{"default/v-b"},
+			wantRetryAt: nil,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			features.SetFeatureGatesDuringTest(t, map[featuregate.Feature]bool{
+				features.ConfigurablePreemptions:      true,
+				features.ConfigurablePreemptionLimits: true,
+			})
+			ctx, log := utiltesting.ContextWithLog(t)
+
+			cl := utiltesting.NewClientBuilder().
+				WithObjects(preemptConfig, perCQLimit).
+				WithLists(&kueue.WorkloadList{Items: admitted}).
+				Build()
+			cqCache := schdcache.New(cl)
+			cqCache.AddOrUpdateResourceFlavor(log, utiltestingapi.MakeResourceFlavor("on-demand").Obj())
+			cqCache.AddOrUpdateResourceFlavor(log, utiltestingapi.MakeResourceFlavor("spot").Obj())
+			for _, cq := range clusterQueues {
+				if err := cqCache.AddClusterQueue(ctx, cq); err != nil {
+					t.Fatalf("Couldn't add ClusterQueue to cache: %v", err)
+				}
+			}
+			snapshot, err := cqCache.Snapshot(ctx)
+			if err != nil {
+				t.Fatalf("unexpected error while building snapshot: %v", err)
+			}
+
+			tracker := limits.NewPreemptionLimitTracker()
+			tracker.Sync(perCQLimit)
+			for cqName, ts := range tc.recordedAt {
+				tracker.Record(ts, policy.ConsumedLimits{"per-cq": policy.NewConsumedLimit(perCQLimit, cqName)})
+			}
+
+			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil, tracker)
+			preemptor.SnapshotPreemptionLimits()
+
+			incoming := workload.NewInfo(log, utiltestingapi.MakeWorkload("incoming", "default").UID("incoming").
+				Request(corev1.ResourceCPU, "1").Obj())
+			incoming.ClusterQueue = "cq-a"
+
+			var gotTargets []string
+			for _, attempt := range tc.attempts {
+				assignment := singlePodSetAssignment(flavorassigner.ResourceAssignment{
+					corev1.ResourceCPU: {Name: attempt.flavor, Mode: flavorassigner.Preempt},
+				})
+				baseStrategies := preemptor.GetPreemptionStrategyIterator(ctx, *incoming, snapshot, assignment)
+				strategies := func(yield func(PreemptionStrategy) bool) {
+					for base := range baseStrategies {
+						for _, accepted := range attempt.strategyAccepted {
+							s := base
+							s.verify = func([]*Target) (bool, string) { return accepted, "" }
+							if !yield(s) {
+								return
+							}
+						}
+					}
+				}
+				for _, target := range preemptor.GetTargetsWithStrategy(ctx, strategies) {
+					gotTargets = append(gotTargets, string(workload.Key(target.WorkloadInfo.Obj)))
+				}
+			}
+
+			if diff := cmp.Diff(tc.wantTargets, gotTargets, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("GetTargetsWithStrategy() targets (-want,+got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantRetryAt, preemptor.TakeRetryAt()); diff != "" {
+				t.Errorf("TakeRetryAt() (-want,+got):\n%s", diff)
+			}
+			if second := preemptor.TakeRetryAt(); second != nil {
+				t.Errorf("Second TakeRetryAt() = %v, want nil", second)
 			}
 		})
 	}

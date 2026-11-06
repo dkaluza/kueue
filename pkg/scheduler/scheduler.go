@@ -300,12 +300,13 @@ func (e *entry) markAssumed() {
 	e.status = assumed
 }
 
-// recordAssignment stores a flavor assignment and its preemption
-// targets from nominate. FlavorScanState aliases the stored
-// assignment's FlavorScanState so it tracks any later mutation.
-func (e *entry) recordAssignment(a flavorassigner.Assignment, targets []*preemption.Target) {
+// recordAssignment stores a flavor assignment, its preemption targets, and
+// any retry timestamp. FlavorScanState aliases the stored assignment's
+// FlavorScanState so it tracks any later mutation.
+func (e *entry) recordAssignment(a flavorassigner.Assignment, targets []*preemption.Target, retryAt *time.Time) {
 	e.assignment = a
 	e.preemptionTargets = targets
+	e.retryAt = retryAt
 	e.inadmissibleMsg = e.assignment.Message()
 	e.FlavorScanState = &e.assignment.FlavorScanState
 }
@@ -722,6 +723,7 @@ type entry struct {
 	inadmissibleMsg      string
 	requeueReason        qcache.RequeueReason
 	preemptionTargets    []*preemption.Target
+	retryAt              *time.Time
 	clusterQueueSnapshot *schdcache.ClusterQueueSnapshot
 	quotaReservedReason  string
 	skipStatusUpdate     bool
@@ -849,8 +851,8 @@ func (s *Scheduler) nominateWorkload(ctx context.Context, log logr.Logger, h qca
 			}
 		}
 	} else {
-		assignment, targets := s.getAssignments(ctx, &e.Info, snap)
-		e.recordAssignment(assignment, targets)
+		assignment, targets, retryAt := s.getAssignments(ctx, &e.Info, snap)
+		e.recordAssignment(assignment, targets, retryAt)
 		return e, true
 	}
 	return e, false
@@ -901,8 +903,8 @@ func (s *Scheduler) updateAssignmentIfNeeded(
 	if !needsLimitsRecompute {
 		e.NominationMapping = e.readResourceToFlavorMapping()
 	}
-	newAssignment, newTargets := s.getAssignments(ctx, &e.Info, snapshot)
-	e.recordAssignment(newAssignment, newTargets)
+	newAssignment, newTargets, newRetryAt := s.getAssignments(ctx, &e.Info, snapshot)
+	e.recordAssignment(newAssignment, newTargets, newRetryAt)
 	if needsOverlapRecompute {
 		if revertRemoval != nil {
 			revertRemoval()
@@ -1291,7 +1293,12 @@ func (s *Scheduler) requeueAndUpdate(ctx context.Context, e entry) {
 		return
 	}
 
+	// RequeueWorkload resets e.ClusterQueue for non-admitted workloads.
+	cqName := e.ClusterQueue
 	added := s.queues.RequeueWorkload(ctx, &e.Info, e.requeueReason, qcache.QuotaReservedReason(e.quotaReservedReason))
+	if added && (e.requeueReason == qcache.RequeueReasonPreemptionNoCandidates || e.requeueReason == qcache.RequeueReasonNoFit) && e.retryAt != nil {
+		qcache.NotifyRetryInadmissibleAfter(s.queues, sets.New(cqName), e.retryAt.Sub(s.clock.Now()))
+	}
 	log.V(2).
 		Info("Workload re-queued", "workload", klog.KObj(e.Obj), "clusterQueue", klog.KRef("", string(e.ClusterQueue)), "queue", klog.KRef(e.Obj.Namespace, string(e.Obj.Spec.QueueName)), "requeueReason", e.requeueReason, "added", added, "status", e.status)
 	if e.status == notNominated || e.status == skipped || e.status == preemptionGated {
@@ -1578,6 +1585,7 @@ func resolveFlavorIndex(wl *workload.Info, flavors []kueue.ResourceFlavorReferen
 func (s *Scheduler) getAssignments(ctx context.Context, wl *workload.Info, snap *schdcache.Snapshot) (
 	fullAssignment flavorassigner.Assignment,
 	targets []*preemption.Target,
+	retryAt *time.Time,
 ) {
 	log := log.FromContext(ctx)
 	cq := snap.ClusterQueue(wl.ClusterQueue)
@@ -1623,8 +1631,11 @@ func (s *Scheduler) getAssignments(ctx context.Context, wl *workload.Info, snap 
 		}
 	}
 
+	// Always drain so a skipped flavor's retry timestamp doesn't leak across calls.
+	retryAt = s.preemptor.TakeRetryAt()
 	fullAssignment, targets = *assignmentPlan.Assignment, assignmentPlan.PreemptionTargets
 	if assignmentPlan.CanFit() {
+		retryAt = nil
 		targets = append(slicePreemptTargets, targets...)
 	}
 	return

@@ -17,6 +17,8 @@ limitations under the License.
 package limits
 
 import (
+	"time"
+
 	"k8s.io/klog/v2"
 
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
@@ -42,36 +44,47 @@ func (l *PreemptionLimiter) NewBudget() *PreemptionLimitBudget {
 }
 
 // TryConsume takes one preemption from every limit that preempting target
-// consumes, and returns those limits. If any limit has no budget left, it takes
-// nothing and returns false.
+// consumes, and returns those limits.
+//
+// If any limit has no budget left, it takes nothing and returns false with the
+// earliest time all exhausted limits have budget again, or nil if waiting alone
+// cannot free them.
 func (b *PreemptionLimitBudget) TryConsume(
 	preemptor, target *workload.Info,
 	preemptorCQ, targetCQ *schdcache.ClusterQueueSnapshot,
-) (policy.ConsumedLimits, bool) {
+) (policy.ConsumedLimits, *time.Time, bool) {
 	consumedLimits := b.limiter.consumedLimits(preemptor, target, preemptorCQ, targetCQ)
 	if len(consumedLimits) == 0 {
-		return nil, true
+		return nil, nil, true
 	}
-	if limit, ok := b.take(consumedLimits); !ok {
-		b.limiter.log.V(5).Info("Skipping preemption candidate exceeding a PreemptionLimit",
-			"candidate", klog.KObj(target.Obj), "preemptionLimit", limit, "scopeValue", consumedLimits[limit].ScopeValue)
-		return nil, false
-	}
-	return consumedLimits, true
-}
-
-// take consumes one preemption from each limit in consumedLimits, or takes
-// nothing and returns a limit that has no budget left.
-func (b *PreemptionLimitBudget) take(consumedLimits policy.ConsumedLimits) (policy.PreemptionLimitReference, bool) {
+	var (
+		blockingLimit policy.PreemptionLimitReference
+		retryAt       *time.Time
+	)
 	for limit, consumed := range consumedLimits {
-		if b.remaining(limit, consumed.ScopeValue) <= 0 {
-			return limit, false
+		if b.remaining(limit, consumed.ScopeValue) > 0 {
+			continue
 		}
+		slotTime := b.limiter.snapshot.nextSlotTime(limit, consumed.ScopeValue, b.taken[limit][consumed.ScopeValue]+1)
+		if slotTime == nil {
+			b.limiter.log.V(5).Info("Skipping preemption candidate exceeding a PreemptionLimit",
+				"candidate", klog.KObj(target.Obj), "preemptionLimit", limit, "scopeValue", consumed.ScopeValue)
+			return nil, nil, false
+		}
+		if retryAt == nil || slotTime.After(*retryAt) {
+			blockingLimit = limit
+			retryAt = slotTime
+		}
+	}
+	if retryAt != nil {
+		b.limiter.log.V(5).Info("Skipping preemption candidate exceeding a PreemptionLimit",
+			"candidate", klog.KObj(target.Obj), "preemptionLimit", blockingLimit, "scopeValue", consumedLimits[blockingLimit].ScopeValue, "nextSlotTime", *retryAt)
+		return nil, retryAt, false
 	}
 	for limit, consumed := range consumedLimits {
 		b.taken.add(limit, consumed.ScopeValue, 1)
 	}
-	return "", true
+	return consumedLimits, nil, true
 }
 
 // remaining returns how many more preemptions can be taken from this budget for limit and scopeValue.

@@ -2425,8 +2425,7 @@ func TestScheduleRecomputePreemptionTargets(t *testing.T) {
 			},
 		},
 		// Like the case above, but a global limit also blocks v3 in cq-w.
-		// TODO: Once timed requeuing for PreemptionLimits is implemented, assert the blocking
-		// PreemptionLimit in p2's message and its requeue after the limit window expires.
+		// TODO: Assert the blocking PreemptionLimit in p2's message once surfaced in status.
 		"preemption limits: workload is requeued as inadmissible when an earlier preemption exhausts the limit for all candidates": {
 			featureGates:            limitsFeatureGates,
 			additionalClusterQueues: limitsClusterQueues,
@@ -2459,6 +2458,9 @@ func TestScheduleRecomputePreemptionTargets(t *testing.T) {
 			},
 			wantInadmissibleLeft: map[kueue.ClusterQueueReference][]workload.Reference{
 				"cq-p2": {"default/p2"},
+			},
+			wantCohortRequeueDelays: map[kueue.CohortReference]time.Duration{
+				"limits-cohort": 60 * time.Second,
 			},
 		},
 		// p2 first settles on default, planning to preempt v2. After p1 uses up cq-v's
@@ -2556,6 +2558,9 @@ func TestScheduleRecomputePreemptionTargets(t *testing.T) {
 			},
 			wantInadmissibleLeft: map[kueue.ClusterQueueReference][]workload.Reference{
 				"cq-p2": {"default/p2"},
+			},
+			wantCohortRequeueDelays: map[kueue.CohortReference]time.Duration{
+				"limits-cohort": 60 * time.Second,
 			},
 			wantPreemptionTargetRecomputations: map[string]map[string]int{
 				"cq-p2": {"skipped": 1},
