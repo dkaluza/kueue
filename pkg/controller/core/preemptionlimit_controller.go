@@ -71,18 +71,25 @@ func NewPreemptionLimitReconciler(
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=preemptionlimits,verbs=get;list;watch
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=preemptionlimits/status,verbs=get;update;patch
 
-// Reconcile prunes the preemption events of the PreemptionLimit that fell out
-// of its window, every preemptionLimitPruneInterval, and forgets all of them
-// once the PreemptionLimit is deleted.
-// Additionally it updates PreemptionLimit.Status field based on current
-// state of preemptions.
+// Reconcile keeps the in-memory state of the PreemptionLimit (see
+// PreemptionLimitTracker) consistent with its current spec, and reports active
+// counts in its status. Whenever the PreemptionLimit spec changes, and every
+// preemptionLimitPruneInterval, it syncs the PreemptionLimit into the tracker:
+//   - starts tracking a new PreemptionLimit, as preemptions are only recorded
+//     for tracked ones;
+//   - resets recorded events for a PreemptionLimit that was recreated or whose
+//     scope or selectors changed, as past events no longer count toward it;
+//   - otherwise keeps recorded events (e.g. on a limit or window change).
+//
+// It then prunes events that fell out of the window, and updates the status
+// with the preemptions counted within the window. Once the PreemptionLimit is
+// deleted, it forgets its tracked state and events.
 func (r *PreemptionLimitReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var limit kueuealpha.PreemptionLimit
 	if err := r.client.Get(ctx, req.NamespacedName, &limit); err != nil {
 		if apierrors.IsNotFound(err) {
-			// A preemption picked before the deletion can still be recorded after
-			// it, leaving a few orphaned events until restart, or until a recreated
-			// PreemptionLimit with the same name prunes them. Accepted as negligible.
+			// Preemptions picked before the deletion but recorded after it are
+			// dropped by Record, as the PreemptionLimit is no longer tracked.
 			ctrl.LoggerFrom(ctx).V(2).Info("PreemptionLimit is deleted, forgetting its preemption events")
 			r.tracker.Forget(policy.PreemptionLimitReference(req.Name))
 		}
@@ -90,7 +97,8 @@ func (r *PreemptionLimitReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	now := r.clock.Now()
-	r.tracker.Prune(now, &limit)
+	r.tracker.Sync(&limit)
+	r.tracker.Prune(now, policy.PreemptionLimitReference(limit.Name))
 
 	limit.Status = r.preemptionLimitStatus(now, &limit)
 	if err := r.client.Status().Update(ctx, &limit); err != nil {
@@ -104,16 +112,15 @@ func (r *PreemptionLimitReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 }
 
 func (r *PreemptionLimitReconciler) preemptionLimitStatus(now time.Time, limit *kueuealpha.PreemptionLimit) kueuealpha.PreemptionLimitStatus {
-	counts := r.tracker.Counts(now, []*kueuealpha.PreemptionLimit{limit})
+	counts := r.tracker.Counts(now, policy.PreemptionLimitReference(limit.Name))
 
 	lastUpdateTime := metav1.NewTime(now)
 	status := kueuealpha.PreemptionLimitStatus{
 		LastUpdateTime: &lastUpdateTime,
 	}
 
-	countsForLimit := counts[policy.PreemptionLimitReference(limit.Name)]
-	status.Counts = make([]kueuealpha.PreemptionLimitCount, 0, len(countsForLimit))
-	for scope, count := range countsForLimit {
+	status.Counts = make([]kueuealpha.PreemptionLimitCount, 0, len(counts))
+	for scope, count := range counts {
 		status.Counts = append(status.Counts, kueuealpha.PreemptionLimitCount{
 			// No need to additionally validate name length because it is created from
 			// existing validated values and maxLength is calculated as combination of

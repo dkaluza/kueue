@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"sync"
 	"testing"
 	"time"
 
@@ -4825,13 +4824,19 @@ func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
 				Obj(),
 			now,
 		)
+	globalLimit := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).Obj()
+	perPreemptedWorkloadLimit := utiltestingalpha.MakePreemptionLimit("per-preempted-workload", kueuealpha.PreemptedWorkloadLimitScope).LimitWindowSeconds(60).Obj()
 	consumedLimits := policy.ConsumedLimits{
-		"global":                 "Global",
-		"per-preempted-workload": "default/victim",
+		"global":                 policy.NewConsumedLimit(globalLimit, policy.GlobalScopeValue),
+		"per-preempted-workload": policy.NewConsumedLimit(perPreemptedWorkloadLimit, "default/victim"),
 	}
 	configurableReasonData := &policy.ConfigurablePreemptionReasonData{
 		ConfigName:     "config",
 		ConsumedLimits: consumedLimits,
+	}
+	wantCounts := map[policy.PreemptionLimitReference]policy.PreemptionLimitScopeCounts{
+		"global":                 {policy.GlobalScopeValue: 1},
+		"per-preempted-workload": {"default/victim": 1},
 	}
 	evictionErr := errors.New("simulated eviction error")
 
@@ -4842,13 +4847,13 @@ func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
 		reasonData    *policy.ConfigurablePreemptionReasonData
 		evictionErr   error
 		issueTwice    bool
-		wantRecorded  policy.ConsumedLimits
+		wantCounts    map[policy.PreemptionLimitReference]policy.PreemptionLimitScopeCounts
 	}{
 		"configurable preemption is recorded": {
-			victim:       victim.Clone().Obj(),
-			reason:       kueue.ConfigurablePreemptionReason,
-			reasonData:   configurableReasonData,
-			wantRecorded: consumedLimits,
+			victim:     victim.Clone().Obj(),
+			reason:     kueue.ConfigurablePreemptionReason,
+			reasonData: configurableReasonData,
+			wantCounts: wantCounts,
 		},
 		"configurable preemption is not recorded when the ConfigurablePreemptionLimits feature is disabled": {
 			disableLimits: true,
@@ -4872,11 +4877,11 @@ func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
 			reasonData: configurableReasonData,
 		},
 		"issuing the same preemption twice records it once": {
-			victim:       victim.Clone().Obj(),
-			reason:       kueue.ConfigurablePreemptionReason,
-			reasonData:   configurableReasonData,
-			issueTwice:   true,
-			wantRecorded: consumedLimits,
+			victim:     victim.Clone().Obj(),
+			reason:     kueue.ConfigurablePreemptionReason,
+			reasonData: configurableReasonData,
+			issueTwice: true,
+			wantCounts: wantCounts,
 		},
 	}
 	for name, tc := range cases {
@@ -4910,7 +4915,10 @@ func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
 				t.Fatalf("unexpected error while building snapshot: %v", err)
 			}
 
+			// Only the PreemptionLimits synced by the PreemptionLimitReconciler are tracked.
 			tracker := limits.NewPreemptionLimitTracker()
+			tracker.Sync(globalLimit)
+			tracker.Sync(perPreemptedWorkloadLimit)
 			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil, tracker)
 
 			preemptorInfo := workload.NewInfo(log, utiltestingapi.MakeWorkload("preemptor", "default").
@@ -4927,7 +4935,7 @@ func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
 				ConfigurablePreemptionReasonData: tc.reasonData,
 			}}
 
-			preemptor.SnapshotPreemptionLimits(ctx)
+			preemptor.SnapshotPreemptionLimits()
 			_, _, err = preemptor.IssuePreemptions(ctx, cqCache, preemptorInfo, targets, snapshot.ClusterQueue("standalone"))
 			if diff := cmp.Diff(tc.evictionErr, err, cmpopts.EquateErrors()); diff != "" {
 				t.Errorf("Unexpected IssuePreemptions() error (-want,+got):\n%s", diff)
@@ -4939,21 +4947,15 @@ func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
 				}
 			}
 
-			// Outside the limits package a tracker can only be built through Record,
-			// which the limits package tests cover.
-			wantTracker := limits.NewPreemptionLimitTracker()
-			wantTracker.Record(now, tc.wantRecorded)
-			if diff := cmp.Diff(wantTracker, tracker,
-				cmp.AllowUnexported(limits.PreemptionLimitTracker{}),
-				cmpopts.IgnoreTypes(sync.RWMutex{}),
-			); diff != "" {
-				t.Errorf("Unexpected recorded preemptions (-want,+got):\n%s", diff)
+			for _, limit := range []policy.PreemptionLimitReference{"global", "per-preempted-workload"} {
+				if diff := cmp.Diff(tc.wantCounts[limit], tracker.Counts(now, limit), cmpopts.EquateEmpty()); diff != "" {
+					t.Errorf("Unexpected counts for PreemptionLimit %q (-want,+got):\n%s", limit, diff)
+				}
 			}
 			// The snapshot is updated with the same preemptions as the tracker.
 			var wantSnapshot *limits.PreemptionLimitsSnapshot
 			if !tc.disableLimits {
-				wantSnapshot = limits.NewPreemptionLimitTracker().Snapshot(now, nil)
-				wantSnapshot.Record(tc.wantRecorded)
+				wantSnapshot = tracker.Snapshot(now)
 			}
 			if diff := cmp.Diff(wantSnapshot, preemptor.limitsSnapshot, cmp.AllowUnexported(limits.PreemptionLimitsSnapshot{})); diff != "" {
 				t.Errorf("Unexpected limits snapshot (-want,+got):\n%s", diff)
@@ -5393,14 +5395,10 @@ func TestSnapshotPreemptionLimits(t *testing.T) {
 
 	cases := map[string]struct {
 		disableLimits bool
-		listErr       error
 		wantSnapshot  bool
 	}{
-		"snapshot holds the listed PreemptionLimits and the preemptions recorded within their windows": {
+		"snapshot holds the synced PreemptionLimits and the preemptions recorded within their windows": {
 			wantSnapshot: true,
-		},
-		"no snapshot when the PreemptionLimits can't be listed": {
-			listErr: errors.New("simulated List error"),
 		},
 		"no snapshot when the ConfigurablePreemptionLimits feature is disabled": {
 			disableLimits: true,
@@ -5412,29 +5410,29 @@ func TestSnapshotPreemptionLimits(t *testing.T) {
 				features.ConfigurablePreemptions:      true,
 				features.ConfigurablePreemptionLimits: !tc.disableLimits,
 			})
-			ctx, _ := utiltesting.ContextWithLog(t)
-			cl := utiltesting.NewClientBuilder().
-				WithObjects(global).
-				WithInterceptorFuncs(interceptor.Funcs{
-					List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
-						if tc.listErr != nil {
-							return tc.listErr
-						}
-						return c.List(ctx, list, opts...)
-					},
-				}).
-				Build()
 			tracker := limits.NewPreemptionLimitTracker()
-			tracker.Record(now.Add(-30*time.Second), policy.ConsumedLimits{"global": "Global"})
-			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil, tracker)
+			tracker.Sync(global)
+			tracker.Record(now.Add(-30*time.Second), policy.ConsumedLimits{"global": policy.NewConsumedLimit(global, policy.GlobalScopeValue)})
+			preemptor := New(
+				utiltesting.NewClientBuilder().Build(),
+				workload.Ordering{},
+				&utiltesting.EventRecorder{},
+				nil,
+				false,
+				clocktesting.NewFakeClock(now),
+				nil,
+				preemptexpectations.New(),
+				nil,
+				tracker,
+			)
 			// Left over from the previous scheduling cycle.
 			preemptor.limitsSnapshot = &limits.PreemptionLimitsSnapshot{}
 
-			preemptor.SnapshotPreemptionLimits(ctx)
+			preemptor.SnapshotPreemptionLimits()
 
 			var want *limits.PreemptionLimitsSnapshot
 			if tc.wantSnapshot {
-				want = tracker.Snapshot(now, []kueuealpha.PreemptionLimit{*global})
+				want = tracker.Snapshot(now)
 			}
 			if diff := cmp.Diff(want, preemptor.limitsSnapshot,
 				cmp.AllowUnexported(limits.PreemptionLimitsSnapshot{}),
@@ -5447,11 +5445,12 @@ func TestSnapshotPreemptionLimits(t *testing.T) {
 
 func TestWithinPreemptionLimits(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
-	global := *utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).Limit(1).LimitWindowSeconds(60).Obj()
+	global := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).Limit(1).LimitWindowSeconds(60).Obj()
+	globalConsumed := policy.NewConsumedLimit(global, policy.GlobalScopeValue)
 	configurable := func(consumedLimits policy.ConsumedLimits) *Target {
 		return &Target{ConfigurablePreemptionReasonData: &policy.ConfigurablePreemptionReasonData{ConsumedLimits: consumedLimits}}
 	}
-	consumingGlobal := configurable(policy.ConsumedLimits{"global": "Global"})
+	consumingGlobal := configurable(policy.ConsumedLimits{"global": globalConsumed})
 
 	cases := map[string]struct {
 		noSnapshot       bool
@@ -5468,7 +5467,7 @@ func TestWithinPreemptionLimits(t *testing.T) {
 			wantWithinLimits: false,
 		},
 		"configurable target exceeding limit after a recorded preemption": {
-			recorded:         []policy.ConsumedLimits{{"global": "Global"}},
+			recorded:         []policy.ConsumedLimits{{"global": globalConsumed}},
 			targets:          []*Target{consumingGlobal},
 			wantWithinLimits: false,
 		},
@@ -5495,7 +5494,9 @@ func TestWithinPreemptionLimits(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			preemptor := &Preemptor{}
 			if !tc.noSnapshot {
-				preemptor.limitsSnapshot = limits.NewPreemptionLimitTracker().Snapshot(now, []kueuealpha.PreemptionLimit{global})
+				tracker := limits.NewPreemptionLimitTracker()
+				tracker.Sync(global)
+				preemptor.limitsSnapshot = tracker.Snapshot(now)
 				for _, consumed := range tc.recorded {
 					preemptor.limitsSnapshot.Record(consumed)
 				}

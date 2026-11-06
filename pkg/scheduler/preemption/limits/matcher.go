@@ -112,6 +112,6 @@ func (m *preemptionLimitMatcher) scopeValue(preemptor, target *workload.Info) po
 		return policy.PreemptionLimitScopeValue(workload.Key(target.Obj))
 	default:
 		// GlobalPreemptionLimitScope, as the API admits no other scope.
-		return policy.PreemptionLimitScopeValue(kueuealpha.GlobalPreemptionLimitScope)
+		return policy.GlobalScopeValue
 	}
 }

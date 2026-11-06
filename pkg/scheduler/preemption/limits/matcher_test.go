@@ -189,7 +189,7 @@ func TestPreemptionLimitMatcherScopeValue(t *testing.T) {
 	target := &workload.Info{Obj: utiltestingapi.MakeWorkload("target", "ns").Obj(), ClusterQueue: "preempted-cq"}
 
 	cases := map[kueuealpha.PreemptionLimitScope]policy.PreemptionLimitScopeValue{
-		kueuealpha.GlobalPreemptionLimitScope:  "Global",
+		kueuealpha.GlobalPreemptionLimitScope:  policy.GlobalScopeValue,
 		kueuealpha.PreemptorCQLimitScope:       "preemptor-cq",
 		kueuealpha.PreemptedCQLimitScope:       "preempted-cq",
 		kueuealpha.PreemptedWorkloadLimitScope: "ns/target",

@@ -68,7 +68,7 @@ func TestNewPreemptionLimiter(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			limiter, err := NewPreemptionLimiter(logr.Discard(), NewPreemptionLimitTracker().Snapshot(time.Time{}, tc.preemptionLimits), config, preemptexpectations.New())
+			limiter, err := NewPreemptionLimiter(logr.Discard(), SnapshotForTest(time.Time{}, tc.preemptionLimits, nil), config, preemptexpectations.New())
 			if diff := diffSelectorError(tc.wantErr, err); diff != "" {
 				t.Fatalf("NewPreemptionLimiter() unexpected error (-want,+got):\n%s", diff)
 			}
@@ -88,7 +88,8 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 	targetCQ := &schdcache.ClusterQueueSnapshot{Name: "preempted-cq", Labels: map[string]string{"side": "preempted"}}
 	preemptor := &workload.Info{Obj: utiltestingapi.MakeWorkload("preemptor", "ns").Obj(), ClusterQueue: "preempting-cq"}
 	target := &workload.Info{Obj: utiltestingapi.MakeWorkload("target", "ns").UID("target").Obj(), ClusterQueue: "preempted-cq"}
-	globalLimit := *utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).Obj()
+	globalLimit := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).Obj()
+	preemptedWorkloadLimit := utiltestingalpha.MakePreemptionLimit("preempted-workload", kueuealpha.PreemptedWorkloadLimitScope).LimitWindowSeconds(60).Obj()
 
 	cases := map[string]struct {
 		preemptionLimits []kueuealpha.PreemptionLimit
@@ -102,36 +103,41 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 		"no limits consume nothing": {},
 		"limits matching the ClusterQueues are consumed together, the others are not": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{
-				globalLimit,
-				*utiltestingalpha.MakePreemptionLimit("preempted-workload", kueuealpha.PreemptedWorkloadLimitScope).LimitWindowSeconds(60).Obj(),
+				*globalLimit,
+				*preemptedWorkloadLimit,
 				*utiltestingalpha.MakePreemptionLimit("other-cqs", kueuealpha.PreemptedCQLimitScope).LimitWindowSeconds(60).
 					PreemptedClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"side": "other"}}).Obj(),
 			},
-			want: policy.ConsumedLimits{"global": "Global", "preempted-workload": "ns/target"},
+			want: policy.ConsumedLimits{
+				"global":             policy.NewConsumedLimit(globalLimit, policy.GlobalScopeValue),
+				"preempted-workload": policy.NewConsumedLimit(preemptedWorkloadLimit, "ns/target"),
+			},
 		},
 		"limits matching the ruleName are consumed, limits for other rules are not": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{
-				globalLimit,
+				*globalLimit,
 				*utiltestingalpha.MakePreemptionLimit("matching-rule", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
 					RuleNames("otherRule", "ruleReference").Obj(),
 				*utiltestingalpha.MakePreemptionLimit("other-rule", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
 					RuleNames("otherRule").Obj(),
 			},
-			want: policy.ConsumedLimits{"global": "Global", "matching-rule": "Global"},
+			want: policy.ConsumedLimits{
+				"global":        policy.NewConsumedLimit(globalLimit, policy.GlobalScopeValue),
+				"matching-rule": policy.NewConsumedLimit(globalLimit, policy.GlobalScopeValue)},
 		},
 		"evicted target consumes nothing": {
-			preemptionLimits: []kueuealpha.PreemptionLimit{globalLimit},
+			preemptionLimits: []kueuealpha.PreemptionLimit{*globalLimit},
 			target: &workload.Info{
 				Obj:          utiltestingapi.MakeWorkload("target", "ns").UID("target").EvictedAt(time.Now()).Obj(),
 				ClusterQueue: "preempted-cq",
 			},
 		},
 		"target with an unobserved eviction consumes nothing": {
-			preemptionLimits:   []kueuealpha.PreemptionLimit{globalLimit},
+			preemptionLimits:   []kueuealpha.PreemptionLimit{*globalLimit},
 			unobservedEviction: true,
 		},
 		"nil limiter consumes nothing": {
-			preemptionLimits: []kueuealpha.PreemptionLimit{globalLimit},
+			preemptionLimits: []kueuealpha.PreemptionLimit{*globalLimit},
 			nilLimiter:       true,
 		},
 	}
@@ -142,7 +148,7 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 			if tc.unobservedEviction {
 				preemptionExpectations.ExpectUIDs(log, client.ObjectKeyFromObject(target.Obj), []types.UID{target.Obj.UID})
 			}
-			limiter, err := NewPreemptionLimiter(log, NewPreemptionLimitTracker().Snapshot(time.Time{}, tc.preemptionLimits),
+			limiter, err := NewPreemptionLimiter(log, SnapshotForTest(time.Time{}, tc.preemptionLimits, nil),
 				utiltestingalpha.MakePreemptionConfig("config").Obj(), preemptionExpectations)
 			if err != nil {
 				t.Fatalf("NewPreemptionLimiter() unexpected error: %v", err)
@@ -151,7 +157,7 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 				limiter = nil
 			}
 			got := limiter.consumedLimits(preemptor, cmp.Or(tc.target, target), "ruleReference", preemptorCQ, targetCQ)
-			if diff := gocmp.Diff(tc.want, got, cmpopts.EquateEmpty()); diff != "" {
+			if diff := gocmp.Diff(tc.want, got, gocmp.AllowUnexported(policy.ConsumedLimit{}), cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("Unexpected consumed limits (-want,+got):\n%s", diff)
 			}
 		})
