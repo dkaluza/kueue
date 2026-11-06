@@ -44,7 +44,7 @@ type Target struct {
 type ConfigurablePreemptionReasonData struct {
 	ConfigName PreemptionConfigReference
 	// MatchedRule is a rule to which preemption candidate is attributed to.
-	// First rule is picked when multiple rules are satisfied.
+	// First satisfied rule within preemption limits is picked.
 	MatchedRule MatchedRule
 	// ConsumedLimits are the PreemptionLimits consumed by preempting this target.
 	ConsumedLimits ConsumedLimits

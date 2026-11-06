@@ -889,7 +889,7 @@ The `Message` for both conditions will be the same (following the existing preem
 - preemptor workload reference,
 - preemption config name, rule name, and selector indices which resulted in choosing this workload as a candidate.
 
-If a candidate workload matches multiple rules, it is attributed to the first matching rule in `spec.rules`, and only that rule is reported.
+If a candidate workload matches multiple rules, it is attributed to the first matching rule in `spec.rules` that allows the preemption, and only that rule is reported.
 
 Example message:
 `Preempted by <preemptor> because of preemption config <preemptionConfig> rule <ruleName>/<selectorIndex>`

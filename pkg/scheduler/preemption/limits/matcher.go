@@ -93,7 +93,7 @@ func (m *preemptionLimitMatcher) matches(preemptorCQ, targetCQ *schdcache.Cluste
 }
 
 func (m *preemptionLimitMatcher) matchRuleNames(ruleReference policy.PreemptionConfigRuleReference) bool {
-	// Match everty rule when no ruleNames provided.
+	// Match every rule when no ruleNames provided.
 	if len(m.limit.Spec.RuleNames) == 0 {
 		return true
 	}
