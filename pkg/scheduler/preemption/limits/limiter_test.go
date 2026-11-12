@@ -84,6 +84,8 @@ func TestNewPreemptionLimiter(t *testing.T) {
 }
 
 func TestPreemptionLimiterConsumedLimits(t *testing.T) {
+	const testRuleReference = "ruleReference"
+
 	preemptorCQ := &schdcache.ClusterQueueSnapshot{Name: "preempting-cq", Labels: map[string]string{"side": "preempting"}}
 	targetCQ := &schdcache.ClusterQueueSnapshot{Name: "preempted-cq", Labels: map[string]string{"side": "preempted"}}
 	preemptor := &workload.Info{Obj: utiltestingapi.MakeWorkload("preemptor", "ns").Obj(), ClusterQueue: "preempting-cq"}
@@ -91,7 +93,7 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 	globalLimit := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).Obj()
 	preemptedWorkloadLimit := utiltestingalpha.MakePreemptionLimit("preempted-workload", kueuealpha.PreemptedWorkloadLimitScope).LimitWindowSeconds(60).Obj()
 	globalLimitWithRuleName := utiltestingalpha.MakePreemptionLimit("matching-rule", kueuealpha.GlobalPreemptionLimitScope).LimitWindowSeconds(60).
-		RuleNames("otherRule", "ruleReference").Obj()
+		RuleNames("otherRule", testRuleReference).Obj()
 
 	cases := map[string]struct {
 		preemptionLimits []kueuealpha.PreemptionLimit
@@ -157,7 +159,7 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 			if tc.nilLimiter {
 				limiter = nil
 			}
-			got := limiter.consumedLimits(preemptor, cmp.Or(tc.target, target), "ruleReference", preemptorCQ, targetCQ)
+			got := limiter.consumedLimits(preemptor, cmp.Or(tc.target, target), testRuleReference, preemptorCQ, targetCQ)
 			if diff := gocmp.Diff(tc.want, got, gocmp.AllowUnexported(policy.ConsumedLimit{}), cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("Unexpected consumed limits (-want,+got):\n%s", diff)
 			}

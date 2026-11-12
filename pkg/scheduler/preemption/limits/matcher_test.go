@@ -112,8 +112,7 @@ func TestPreemptionLimitMatcherMatches(t *testing.T) {
 		want                          bool
 	}{
 		"limit without ClusterQueue selectors matches any ClusterQueues": {
-			ruleReference: "test",
-			want:          true,
+			want: true,
 		},
 		"limit matches when both ClusterQueue selectors match": {
 			preemptorClusterQueueSelector: selectsPreemptor,
@@ -133,13 +132,13 @@ func TestPreemptionLimitMatcherMatches(t *testing.T) {
 			ruleReference:                 "preemptionLimitRuleReference",
 			want:                          false,
 		},
-		"ruleNames contain ruleReference for candidate, match": {
-			ruleNames:     []string{"preemptionLimitRuleReference"},
+		"multiple ruleNames contain ruleReference for candidate, match": {
+			ruleNames:     []string{"unknownRuleName", "preemptionLimitRuleReference"},
 			ruleReference: "preemptionLimitRuleReference",
 			want:          true,
 		},
-		"ruleNames don't contain ruleReference for candidate, no match": {
-			ruleNames:     []string{"unknownRuleName"},
+		"multiple ruleNames don't contain ruleReference for candidate, no match": {
+			ruleNames:     []string{"unknownRuleName", "unknownRuleName2"},
 			ruleReference: "preemptionLimitRuleReference",
 			want:          false,
 		},

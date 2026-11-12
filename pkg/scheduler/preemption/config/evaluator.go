@@ -269,8 +269,10 @@ func (p *PreemptionEvaluator) hasConditionalRules() bool {
 // configurableCandidate represents a workload selected for configurable preemption
 // together with the configuration rules and selectors that selected it.
 type configurableCandidate struct {
-	WlInfo                    *workload.Info
-	ConfigName                policy.PreemptionConfigReference
+	WlInfo     *workload.Info
+	ConfigName policy.PreemptionConfigReference
+	// RuleNameToSelectorIndexes maps a reference of a matched rule to indexes of the matched selectors.
+	// It keeps the order of matched rules for later evaluations like limits.
 	RuleNameToSelectorIndexes *orderedgroups.OrderedGroups[policy.PreemptionConfigRuleReference, int]
 }
 

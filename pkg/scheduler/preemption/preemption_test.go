@@ -4177,7 +4177,7 @@ func TestPreemption(t *testing.T) {
 					Obj(),
 			},
 		},
-		"configurable preemption, matching multiple rules and selectors but showing only the first rule": {
+		"configurable preemption, matching multiple rules and selectors indicates only the first rule in condition messages": {
 			featureGates: map[featuregate.Feature]bool{
 				features.ConfigurablePreemptions: true,
 			},
