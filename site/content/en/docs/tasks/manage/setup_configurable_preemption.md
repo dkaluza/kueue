@@ -222,7 +222,7 @@ status:
     message: "Preempted by default/hero-job-xyz because of preemption config hero-workloads-preemption-config rule hero-preempt-lower-priority/0"
 ```
 
-If multiple selectors within a rule triggered the candidate's preemption, their indices are concatenated with commas (e.g., `rule hero-preempt-lower-priority/0,1`). If multiple rules match the candidate, only the first matching rule in `spec.rules` that allows the preemption is reported.
+If multiple selectors within a rule triggered the candidate's preemption, their indices are concatenated with commas (e.g., `rule hero-preempt-lower-priority/0,1`). Preemption rules are evaluated based on trigger type (`Always`, `InsufficientQuota`, `QuotaFeasibleAndInsufficientTopology`) and in `spec.rules` order per trigger. When multiple rules match a candidate, the first matching rule in this order is used and reported (or, when preemption limits are enabled, the first rule in order that satisfies the limits).
 
 ### Metrics
 

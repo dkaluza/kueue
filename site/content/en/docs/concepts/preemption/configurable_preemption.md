@@ -67,6 +67,7 @@ The `activationPolicy.trigger` field determines when a preemption rule becomes a
 | `InsufficientQuota` | Matching candidates are contributed only if preempting baseline candidates does not yield sufficient quota to admit the incoming workload. |
 | `QuotaFeasibleAndInsufficientTopology` | Matching candidates are contributed only if quota is already feasible for the preemptor under at least one eligible flavor assignment (after baseline preemption and applicable `InsufficientQuota` candidates), but the workload cannot be admitted because no placement satisfies the physical topology requirements (see: [Topology-Aware Scheduling](/docs/concepts/topology_aware_scheduling)). |
 
+Preemption rules are evaluated based on trigger type (`Always`, then `InsufficientQuota`, then `QuotaFeasibleAndInsufficientTopology`) and in `spec.rules` order per trigger. When a candidate matches multiple rules, the first matching rule in this order is used; when preemption limits are enabled, the first rule in order that satisfies the limits is used.
 
 ## Candidate Selectors
 
@@ -186,6 +187,8 @@ status:
     reason: ConfigurablePreemption
     message: "Preempted by default/hero-job-xyz because of preemption config hero-workloads-preemption-config rule hero-preempt-lower-priority/0"
 ```
+
+If multiple selectors within the selected rule matched the candidate, their indices are concatenated with commas (e.g., `rule hero-preempt-lower-priority/0,1`). When multiple rules match a candidate, only the rule used for preemption (the first matching rule based on trigger type and `spec.rules` order per trigger, or the first rule in order that satisfies preemption limits when limits are enabled) is reported.
 
 ---
 

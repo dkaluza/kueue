@@ -220,8 +220,10 @@ spec:
                 ruleNames:
                   description: |-
                     ruleNames restricts the limit to specific rule names within matching PreemptionConfigs.
-                    In case when preemption candidate was returned by multiple preemption rules, only the first rule
-                    is considered when matching with limit.
+                    Preemption rules are evaluated based on trigger type (Always, InsufficientQuota,
+                    QuotaFeasibleAndInsufficientTopology) and in spec.rules order per trigger.
+                    When limits are enabled and a candidate matches multiple rules, the first rule in
+                    order that satisfies the limits is used.
                     If not set, it applies to all rules.
                   items:
                     maxLength: 63
