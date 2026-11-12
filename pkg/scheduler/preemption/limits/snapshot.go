@@ -17,6 +17,8 @@ limitations under the License.
 package limits
 
 import (
+	"time"
+
 	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
 )
@@ -36,13 +38,33 @@ type PreemptionLimitsSnapshot struct {
 	// recorded holds the preemptions recorded within the window of each limit when
 	// the snapshot was taken, plus ones added with `Record` method.
 	recorded preemptionCounts
+	// earliestEvent holds the earliest timestamp among the recorded preemptions
+	// of each limit and scope value.
+	earliestEvent map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]time.Time
 }
 
-// Record updates the snapshot by incrementing the recorded preemptions for every
+// Record updates the snapshot by recording a preemption at ts for every
 // PreemptionLimit and scope value in consumedLimits.
-func (s *PreemptionLimitsSnapshot) Record(consumedLimits policy.ConsumedLimits) {
+func (s *PreemptionLimitsSnapshot) Record(ts time.Time, consumedLimits policy.ConsumedLimits) {
 	for limit, consumed := range consumedLimits {
-		s.recorded.add(limit, consumed.ScopeValue, 1)
+		s.record(limit, consumed.ScopeValue, 1, ts)
+	}
+}
+
+func (s *PreemptionLimitsSnapshot) record(
+	limit policy.PreemptionLimitReference,
+	scopeValue policy.PreemptionLimitScopeValue,
+	count int32,
+	earliest time.Time,
+) {
+	s.recorded.add(limit, scopeValue, count)
+	scopes, found := s.earliestEvent[limit]
+	if !found {
+		scopes = make(map[policy.PreemptionLimitScopeValue]time.Time)
+		s.earliestEvent[limit] = scopes
+	}
+	if existing, found := scopes[scopeValue]; !found || earliest.Before(existing) {
+		scopes[scopeValue] = earliest
 	}
 }
 
@@ -72,4 +94,18 @@ func (s *PreemptionLimitsSnapshot) allowance(limit policy.PreemptionLimitReferen
 		return 0
 	}
 	return preemptionLimit.Spec.Limit - s.recorded[limit][scopeValue]
+}
+
+// nextSlotTime returns the time when the earliest recorded preemption for limit
+// and scopeValue expires, or nil if none is recorded or limit allows no preemptions.
+func (s *PreemptionLimitsSnapshot) nextSlotTime(limit policy.PreemptionLimitReference, scopeValue policy.PreemptionLimitScopeValue) *time.Time {
+	preemptionLimit, found := s.limitByName[limit]
+	if !found || preemptionLimit.Spec.Limit <= 0 {
+		return nil
+	}
+	earliest, found := s.earliestEvent[limit][scopeValue]
+	if !found {
+		return nil
+	}
+	return new(earliest.Add(time.Duration(preemptionLimit.Spec.LimitWindowSeconds) * time.Second))
 }

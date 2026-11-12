@@ -76,34 +76,45 @@ func TestPreemptionLimitTrackerSnapshot(t *testing.T) {
 	globalLimit := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).
 		Generation(1).LimitWindowSeconds(3600).Obj()
 
+	type earliestEvents = map[policy.PreemptionLimitReference]map[policy.PreemptionLimitScopeValue]time.Time
+
 	cases := map[string]struct {
-		initialLimits trackedLimits
-		wantLimits    []*kueuealpha.PreemptionLimit
-		wantRecorded  preemptionCounts
+		initialLimits     trackedLimits
+		wantLimits        []*kueuealpha.PreemptionLimit
+		wantRecorded      preemptionCounts
+		wantEarliestEvent earliestEvents
 	}{
 		"empty tracker gives an empty snapshot": {},
 		"events before the window are not counted": {
-			initialLimits: tracked(trackedLimit(perCQLimit, ScopeEvents{"cq-a": {cutoff.Add(-time.Hour), cutoff.Add(-time.Nanosecond), cutoff.Add(time.Nanosecond), now}})),
-			wantLimits:    []*kueuealpha.PreemptionLimit{perCQLimit},
-			wantRecorded:  preemptionCounts{"per-cq": {"cq-a": 2}},
+			initialLimits:     tracked(trackedLimit(perCQLimit, ScopeEvents{"cq-a": {cutoff.Add(-time.Hour), cutoff.Add(-time.Nanosecond), cutoff.Add(time.Nanosecond), now}})),
+			wantLimits:        []*kueuealpha.PreemptionLimit{perCQLimit},
+			wantRecorded:      preemptionCounts{"per-cq": {"cq-a": 2}},
+			wantEarliestEvent: earliestEvents{"per-cq": {"cq-a": cutoff.Add(time.Nanosecond)}},
 		},
-		"event at the start of the window is counted": {
+		"event at the start of the window is not counted": {
 			initialLimits: tracked(trackedLimit(perCQLimit, ScopeEvents{"cq-a": {cutoff}})),
 			wantLimits:    []*kueuealpha.PreemptionLimit{perCQLimit},
-			wantRecorded:  preemptionCounts{"per-cq": {"cq-a": 1}},
+		},
+		"event at the end of the window is counted": {
+			initialLimits:     tracked(trackedLimit(perCQLimit, ScopeEvents{"cq-a": {now}})),
+			wantLimits:        []*kueuealpha.PreemptionLimit{perCQLimit},
+			wantRecorded:      preemptionCounts{"per-cq": {"cq-a": 1}},
+			wantEarliestEvent: earliestEvents{"per-cq": {"cq-a": now}},
 		},
 		"every scope value of a limit is counted": {
-			initialLimits: tracked(trackedLimit(perCQLimit, ScopeEvents{"cq-a": {now}, "cq-b": {now, now}})),
-			wantLimits:    []*kueuealpha.PreemptionLimit{perCQLimit},
-			wantRecorded:  preemptionCounts{"per-cq": {"cq-a": 1, "cq-b": 2}},
+			initialLimits:     tracked(trackedLimit(perCQLimit, ScopeEvents{"cq-a": {now}, "cq-b": {now.Add(-10 * time.Second), now}})),
+			wantLimits:        []*kueuealpha.PreemptionLimit{perCQLimit},
+			wantRecorded:      preemptionCounts{"per-cq": {"cq-a": 1, "cq-b": 2}},
+			wantEarliestEvent: earliestEvents{"per-cq": {"cq-a": now, "cq-b": now.Add(-10 * time.Second)}},
 		},
 		"each limit counts within its own window": {
 			initialLimits: tracked(
 				trackedLimit(perCQLimit, ScopeEvents{"cq-a": {now.Add(-30 * time.Minute)}}),
 				trackedLimit(globalLimit, ScopeEvents{policy.GlobalScopeValue: {now.Add(-2 * time.Hour), now.Add(-30 * time.Minute)}}),
 			),
-			wantLimits:   []*kueuealpha.PreemptionLimit{globalLimit, perCQLimit},
-			wantRecorded: preemptionCounts{"global": {policy.GlobalScopeValue: 1}},
+			wantLimits:        []*kueuealpha.PreemptionLimit{globalLimit, perCQLimit},
+			wantRecorded:      preemptionCounts{"global": {policy.GlobalScopeValue: 1}},
+			wantEarliestEvent: earliestEvents{"global": {policy.GlobalScopeValue: now.Add(-30 * time.Minute)}},
 		},
 	}
 	for name, tc := range cases {
@@ -117,7 +128,11 @@ func TestPreemptionLimitTrackerSnapshot(t *testing.T) {
 			for _, l := range tc.wantLimits {
 				wantLimitByName[policy.PreemptionLimitReference(l.Name)] = trackedCopy(l)
 			}
-			want := &PreemptionLimitsSnapshot{limitByName: wantLimitByName, recorded: tc.wantRecorded}
+			want := &PreemptionLimitsSnapshot{
+				limitByName:   wantLimitByName,
+				recorded:      tc.wantRecorded,
+				earliestEvent: tc.wantEarliestEvent,
+			}
 			if diff := cmp.Diff(want, got, cmp.AllowUnexported(PreemptionLimitsSnapshot{}), cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("Unexpected snapshot (-want,+got):\n%s", diff)
 			}
@@ -140,7 +155,7 @@ func TestPreemptionLimitTrackerCounts(t *testing.T) {
 		"only the counts of the given limit within its window are returned": {
 			initialLimits: tracked(
 				trackedLimit(perCQLimit, ScopeEvents{
-					"cq-a": {cutoff.Add(-time.Hour), cutoff.Add(-time.Nanosecond), cutoff, now},
+					"cq-a": {cutoff.Add(-time.Hour), cutoff.Add(-time.Nanosecond), cutoff, cutoff.Add(time.Nanosecond), now},
 					"cq-b": {now},
 				}),
 				trackedLimit(globalLimit, ScopeEvents{policy.GlobalScopeValue: {now}}),

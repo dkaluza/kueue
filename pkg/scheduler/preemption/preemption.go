@@ -24,6 +24,7 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -50,6 +51,7 @@ import (
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/fairsharing"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/limits"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
+	cmputil "sigs.k8s.io/kueue/pkg/util/cmp"
 	"sigs.k8s.io/kueue/pkg/util/expectations"
 	"sigs.k8s.io/kueue/pkg/util/logging"
 	"sigs.k8s.io/kueue/pkg/util/priority"
@@ -78,6 +80,8 @@ type Preemptor struct {
 	preemptionLimitTracker *limits.PreemptionLimitTracker
 	// limitsSnapshot holds the PreemptionLimits enforced in the current scheduling cycle.
 	limitsSnapshot *limits.PreemptionLimitsSnapshot
+	// retryAt holds the earliest retry time from exhausted strategy iterations until TakeRetryAt clears it.
+	retryAt *time.Time
 }
 
 // PreemptionStrategy represents a singular set of ordered potential preemption candidates.
@@ -178,10 +182,21 @@ func (p *Preemptor) GetPreemptionStrategyIterator(
 }
 
 func (p *Preemptor) getPreemptionStrategyIterator(ctx context.Context, preemptionCtx *preemptionCtx) iter.Seq[PreemptionStrategy] {
+	var strategies iter.Seq[PreemptionStrategy]
 	if p.enableFairSharing {
-		return fairPreemptionStrategy(ctx, p, preemptionCtx, p.fsStrategies)
+		strategies = fairPreemptionStrategy(ctx, p, preemptionCtx, p.fsStrategies)
+	} else {
+		strategies = classicalPreemptionStrategy(ctx, p, preemptionCtx)
 	}
-	return classicalPreemptionStrategy(ctx, p, preemptionCtx)
+	return func(yield func(PreemptionStrategy) bool) {
+		for strategy := range strategies {
+			if !yield(strategy) {
+				return
+			}
+		}
+		// Early exit means a strategy was accepted, so nothing needs a retry.
+		p.retryAt = cmputil.EarliestTime(p.retryAt, preemptionCtx.configurableEvaluator.RetryAt())
+	}
 }
 
 // GetTargetsWithStrategy returns the workloads to evict using the provided preemption strategies.
@@ -241,6 +256,14 @@ func (p *Preemptor) WithinPreemptionLimits(targets []*Target) bool {
 		}
 	}
 	return p.limitsSnapshot.WithinLimits(preemptions)
+}
+
+// TakeRetryAt returns and clears the earliest retry timestamp from failed
+// preemption attempts since the last call, or nil if none.
+func (p *Preemptor) TakeRetryAt() *time.Time {
+	retryAt := p.retryAt
+	p.retryAt = nil
+	return retryAt
 }
 
 // Resolved once per attempt: both algorithms evaluate several triggers, and the
@@ -313,8 +336,8 @@ func (p *Preemptor) IssuePreemptions(
 	ctx, cancel := context.WithCancel(ctx)
 	var successfullyPreempted atomic.Int64
 	var preemptionErrors atomic.Int64
-	// recorded marks the targets whose preemption counts against PreemptionLimits.
-	recorded := make([]bool, len(targets))
+	// recordedAt holds the timestamp recorded for each target whose preemption counts against PreemptionLimits.
+	recordedAt := make([]*time.Time, len(targets))
 	defer cancel()
 	workqueue.ParallelizeUntil(ctx, parallelPreemptions, len(targets), func(i int) {
 		target := targets[i]
@@ -356,8 +379,9 @@ func (p *Preemptor) IssuePreemptions(
 			return
 		}
 		if features.Enabled(features.ConfigurablePreemptionLimits) && target.ConfigurablePreemptionReasonData != nil {
-			p.preemptionLimitTracker.Record(p.clock.Now(), target.ConfigurablePreemptionReasonData.ConsumedLimits)
-			recorded[i] = true
+			ts := p.clock.Now()
+			p.preemptionLimitTracker.Record(ts, target.ConfigurablePreemptionReasonData.ConsumedLimits)
+			recordedAt[i] = &ts
 		}
 		preemptorEffPri, preemptorBase, preemptorBoost := priorityInfo(log, preemptor.Obj)
 		targetEffPri, targetBase, targetBoost := priorityInfo(log, target.WorkloadInfo.Obj)
@@ -379,8 +403,8 @@ func (p *Preemptor) IssuePreemptions(
 	// limitsSnapshot is not synchronized (scheduling is single-threaded), so update it
 	// after ParallelizeUntil finishes.
 	for i, target := range targets {
-		if recorded[i] {
-			p.limitsSnapshot.Record(target.ConfigurablePreemptionReasonData.ConsumedLimits)
+		if recordedAt[i] != nil {
+			p.limitsSnapshot.Record(*recordedAt[i], target.ConfigurablePreemptionReasonData.ConsumedLimits)
 		}
 	}
 	return int(successfullyPreempted.Load()), int(preemptionErrors.Load()), errCh.ReceiveError()

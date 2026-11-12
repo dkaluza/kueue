@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,6 +39,7 @@ import (
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/config/filters"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/limits"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
+	cmputil "sigs.k8s.io/kueue/pkg/util/cmp"
 	"sigs.k8s.io/kueue/pkg/util/expectations"
 	"sigs.k8s.io/kueue/pkg/util/orderedgroups"
 	"sigs.k8s.io/kueue/pkg/workload"
@@ -60,6 +62,8 @@ type PreemptionEvaluator struct {
 	// preemptionLimiter enforces the PreemptionLimits applying to the PreemptionConfig.
 	// It is nil when the ConfigurablePreemptionLimits feature is disabled.
 	preemptionLimiter *limits.PreemptionLimiter
+	// retryAt is the earliest time a skipped candidate may become eligible.
+	retryAt *time.Time
 }
 
 // NewPreemptionEvaluator returns the PreemptionEvaluator of the given preemptor for the
@@ -124,6 +128,15 @@ func NewEvaluatorForPreemptionConfig(
 func (p *PreemptionEvaluator) HasRules() bool {
 	return p != nil &&
 		p.hasRulesFor(kueuealpha.Always, kueuealpha.InsufficientQuota, kueuealpha.QuotaFeasibleAndInsufficientTopology)
+}
+
+// RetryAt returns the earliest time a candidate skipped so far may become eligible,
+// or nil if waiting alone would not make any eligible.
+func (p *PreemptionEvaluator) RetryAt() *time.Time {
+	if p == nil {
+		return nil
+	}
+	return p.retryAt
 }
 
 // FindCandidates evaluates candidates across applicable PreemptionConfig
@@ -205,8 +218,9 @@ func (p *PreemptionEvaluator) iterateOverCandidates(
 	for _, candidate := range candidates {
 		targetCQ := snapshot.ClusterQueue(candidate.WlInfo.ClusterQueue)
 		for ruleReference, selectorIndexes := range candidate.RuleNameToSelectorIndexes.InOrder {
-			consumedLimits, withinLimits := budget.TryConsume(p.preemptor, candidate.WlInfo, ruleReference, preemptorCQ, targetCQ)
+			consumedLimits, retryAt, withinLimits := budget.TryConsume(p.preemptor, candidate.WlInfo, ruleReference, preemptorCQ, targetCQ)
 			if !withinLimits {
+				p.retryAt = cmputil.EarliestTime(p.retryAt, retryAt)
 				continue
 			}
 			if !yield(&policy.Target{

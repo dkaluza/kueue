@@ -4919,7 +4919,8 @@ func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
 			tracker := limits.NewPreemptionLimitTracker()
 			tracker.Sync(globalLimit)
 			tracker.Sync(perPreemptedWorkloadLimit)
-			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, nil, false, clocktesting.NewFakeClock(now), nil, preemptexpectations.New(), nil, tracker)
+			fakeClock := clocktesting.NewFakeClock(now)
+			preemptor := New(cl, workload.Ordering{}, &utiltesting.EventRecorder{}, nil, false, fakeClock, nil, preemptexpectations.New(), nil, tracker)
 
 			preemptorInfo := workload.NewInfo(log, utiltestingapi.MakeWorkload("preemptor", "default").
 				UID("preemptor").
@@ -4936,6 +4937,7 @@ func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
 			}}
 
 			preemptor.SnapshotPreemptionLimits()
+			fakeClock.Step(time.Second)
 			_, _, err = preemptor.IssuePreemptions(ctx, cqCache, preemptorInfo, targets, snapshot.ClusterQueue("standalone"))
 			if diff := cmp.Diff(tc.evictionErr, err, cmpopts.EquateErrors()); diff != "" {
 				t.Errorf("Unexpected IssuePreemptions() error (-want,+got):\n%s", diff)
@@ -4947,15 +4949,16 @@ func TestIssuePreemptionsRecordsPreemptionLimits(t *testing.T) {
 				}
 			}
 
+			evictedAt := fakeClock.Now()
 			for _, limit := range []policy.PreemptionLimitReference{"global", "per-preempted-workload"} {
-				if diff := cmp.Diff(tc.wantCounts[limit], tracker.Counts(now, limit), cmpopts.EquateEmpty()); diff != "" {
+				if diff := cmp.Diff(tc.wantCounts[limit], tracker.Counts(evictedAt, limit), cmpopts.EquateEmpty()); diff != "" {
 					t.Errorf("Unexpected counts for PreemptionLimit %q (-want,+got):\n%s", limit, diff)
 				}
 			}
 			// The snapshot is updated with the same preemptions as the tracker.
 			var wantSnapshot *limits.PreemptionLimitsSnapshot
 			if !tc.disableLimits {
-				wantSnapshot = tracker.Snapshot(now)
+				wantSnapshot = tracker.Snapshot(evictedAt)
 			}
 			if diff := cmp.Diff(wantSnapshot, preemptor.limitsSnapshot, cmp.AllowUnexported(limits.PreemptionLimitsSnapshot{})); diff != "" {
 				t.Errorf("Unexpected limits snapshot (-want,+got):\n%s", diff)
@@ -5498,7 +5501,7 @@ func TestWithinPreemptionLimits(t *testing.T) {
 				tracker.Sync(global)
 				preemptor.limitsSnapshot = tracker.Snapshot(now)
 				for _, consumed := range tc.recorded {
-					preemptor.limitsSnapshot.Record(consumed)
+					preemptor.limitsSnapshot.Record(now, consumed)
 				}
 			}
 			if got := preemptor.WithinPreemptionLimits(tc.targets); got != tc.wantWithinLimits {

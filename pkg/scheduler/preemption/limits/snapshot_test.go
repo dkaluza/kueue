@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	gocmp "github.com/google/go-cmp/cmp"
+
 	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
 	utiltestingalpha "sigs.k8s.io/kueue/pkg/util/testing/v1alpha1"
@@ -143,7 +145,7 @@ func TestPreemptionLimitsSnapshotRecord(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			snapshot := SnapshotForTest(now, []kueuealpha.PreemptionLimit{*globalLimit, *perCQLimit}, tc.events)
 			for _, consumed := range tc.recorded {
-				snapshot.Record(consumed)
+				snapshot.Record(now, consumed)
 			}
 			for limit, scopes := range tc.wantAllowance {
 				for scope, want := range scopes {
@@ -151,6 +153,79 @@ func TestPreemptionLimitsSnapshotRecord(t *testing.T) {
 						t.Errorf("allowance(%q, %q) = %d, want %d", limit, scope, got, want)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestPreemptionLimitsSnapshotNextSlotTime(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	global := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalPreemptionLimitScope).
+		LimitWindowSeconds(60)
+	globalOne := global.Clone().Limit(1).Obj()
+	globalConsumed := policy.ConsumedLimits{"global": policy.NewConsumedLimit(globalOne, policy.GlobalScopeValue)}
+
+	cases := map[string]struct {
+		limits   []kueuealpha.PreemptionLimit
+		events   events
+		recorded []time.Time
+		limit    policy.PreemptionLimitReference
+		want     *time.Time
+	}{
+		"earliest active event expires after window": {
+			limits: []kueuealpha.PreemptionLimit{*globalOne},
+			events: events{now.Add(-40 * time.Second), now.Add(-10 * time.Second)},
+			limit:  "global",
+			want:   new(now.Add(20 * time.Second)),
+		},
+		"later event recorded in snapshot keeps earlier slot time": {
+			limits:   []kueuealpha.PreemptionLimit{*globalOne},
+			events:   events{now.Add(-20 * time.Second)},
+			recorded: []time.Time{now.Add(5 * time.Second)},
+			limit:    "global",
+			want:     new(now.Add(40 * time.Second)),
+		},
+		"earlier event recorded in snapshot lowers slot time": {
+			limits:   []kueuealpha.PreemptionLimit{*globalOne},
+			events:   events{now.Add(-10 * time.Second)},
+			recorded: []time.Time{now.Add(-25 * time.Second)},
+			limit:    "global",
+			want:     new(now.Add(35 * time.Second)),
+		},
+		"event recorded in empty snapshot sets slot time": {
+			limits:   []kueuealpha.PreemptionLimit{*globalOne},
+			recorded: []time.Time{now.Add(5 * time.Second)},
+			limit:    "global",
+			want:     new(now.Add(65 * time.Second)),
+		},
+		"no recorded events returns nil": {
+			limits: []kueuealpha.PreemptionLimit{*globalOne},
+			limit:  "global",
+		},
+		"limit of 0 never frees a slot": {
+			limits: []kueuealpha.PreemptionLimit{*global.Clone().Limit(0).Obj()},
+			events: events{now.Add(-20 * time.Second)},
+			limit:  "global",
+		},
+		"unknown limit returns nil": {
+			limits: []kueuealpha.PreemptionLimit{*globalOne},
+			events: events{now.Add(-20 * time.Second)},
+			limit:  "missing",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var eventsByLimit EventsByLimit
+			if len(tc.events) > 0 {
+				eventsByLimit = EventsByLimit{"global": {policy.GlobalScopeValue: tc.events}}
+			}
+			snapshot := SnapshotForTest(now, tc.limits, eventsByLimit)
+			for _, ts := range tc.recorded {
+				snapshot.Record(ts, globalConsumed)
+			}
+			if diff := gocmp.Diff(tc.want, snapshot.nextSlotTime(tc.limit, policy.GlobalScopeValue)); diff != "" {
+				t.Errorf("nextSlotTime() (-want,+got):\n%s", diff)
 			}
 		})
 	}
@@ -235,7 +310,7 @@ func TestPreemptionLimitsSnapshotWithinLimits(t *testing.T) {
 			if !tc.nilSnapshot {
 				snapshot = SnapshotForTest(now, []kueuealpha.PreemptionLimit{*perCQLimit, *globalLimit}, tc.events)
 				for _, consumed := range tc.recorded {
-					snapshot.Record(consumed)
+					snapshot.Record(now, consumed)
 				}
 			}
 			if got := snapshot.WithinLimits(tc.preemptions); got != tc.wantWithinLimits {
