@@ -41,6 +41,7 @@ import (
 	"sigs.k8s.io/kueue/pkg/features"
 	"sigs.k8s.io/kueue/pkg/scheduler"
 	preemptexpectations "sigs.k8s.io/kueue/pkg/scheduler/preemption/expectations"
+	"sigs.k8s.io/kueue/pkg/scheduler/preemption/limits"
 	"sigs.k8s.io/kueue/pkg/webhooks"
 	"sigs.k8s.io/kueue/test/integration/framework"
 	"sigs.k8s.io/kueue/test/util/behavioral"
@@ -54,11 +55,12 @@ const (
 )
 
 var (
-	cfg       *rest.Config
-	k8sClient client.Client
-	ctx       context.Context
-	fwk       *framework.Framework
-	qManager  *qcache.Manager
+	cfg                    *rest.Config
+	k8sClient              client.Client
+	ctx                    context.Context
+	fwk                    *framework.Framework
+	qManager               *qcache.Manager
+	preemptionLimitTracker *limits.PreemptionLimitTracker
 )
 
 func TestConfigurablePreemptions(t *testing.T) {
@@ -81,13 +83,16 @@ var _ = ginkgo.AfterSuite(func() {
 	fwk.Teardown()
 })
 
-var _ = ginkgo.BeforeEach(func() {
+// startManager starts the manager and scheduler for the current spec and
+// registers StopManager via DeferCleanup. It is called from spec/container
+// BeforeEach blocks rather than a suite-level BeforeEach because Ginkgo runs
+// suite-level BeforeEach before container BeforeEach blocks, so per-container
+// SetFeatureGateDuringTest(ConfigurablePreemptionLimits, ...) overrides must run
+// before SetupControllers registers controllers and allocates the tracker.
+func startManager() {
 	fwk.StartManager(ctx, cfg, managerAndSchedulerSetup())
-})
-
-var _ = ginkgo.AfterEach(func() {
-	fwk.StopManager(ctx)
-})
+	ginkgo.DeferCleanup(fwk.StopManager, ctx)
+}
 
 func managerAndSchedulerSetup() framework.ManagerSetup {
 	return func(ctx context.Context, mgr manager.Manager) {
@@ -96,6 +101,10 @@ func managerAndSchedulerSetup() framework.ManagerSetup {
 
 		cCache := schdcache.New(mgr.GetClient())
 		preemptionExpectations := preemptexpectations.New()
+		preemptionLimitTracker = nil
+		if features.Enabled(features.ConfigurablePreemptionLimits) {
+			preemptionLimitTracker = limits.NewPreemptionLimitTracker()
+		}
 		queues := integration.NewManager(ctx, mgr.GetClient(), cCache,
 			qcache.WithPreemptionExpectations(preemptionExpectations))
 		qManager = queues
@@ -110,7 +119,11 @@ func managerAndSchedulerSetup() framework.ManagerSetup {
 			queues,
 			cCache,
 			configuration,
-			core.SetupControllersOpts{PreemptionExpectations: preemptionExpectations},
+			core.SetupControllersOpts{
+				PreemptionExpectations:       preemptionExpectations,
+				PreemptionLimitTracker:       preemptionLimitTracker,
+				PreemptionLimitPruneInterval: 100 * time.Millisecond,
+			},
 		)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred(), "controller", failedCtrl)
 
@@ -134,6 +147,7 @@ func managerAndSchedulerSetup() framework.ManagerSetup {
 			mgr.GetClient(),
 			mgr.GetEventRecorder(constants.AdmissionName),
 			scheduler.WithPreemptionExpectations(preemptionExpectations),
+			scheduler.WithPreemptionLimitTracker(preemptionLimitTracker),
 		)
 		err = sched.Start(ctx)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
