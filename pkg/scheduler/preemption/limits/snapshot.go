@@ -86,6 +86,16 @@ func (s *PreemptionLimitsSnapshot) WithinLimits(preemptions []policy.ConsumedLim
 	return true
 }
 
+// scope returns the scope of limit in the snapshot, or an empty string if limit
+// is not in the snapshot.
+func (s *PreemptionLimitsSnapshot) scope(limit policy.PreemptionLimitReference) kueuealpha.PreemptionLimitScope {
+	preemptionLimit, found := s.limitByName[limit]
+	if !found {
+		return ""
+	}
+	return preemptionLimit.Spec.Scope
+}
+
 // allowance returns how many more preemptions are allowed for limit and
 // scopeValue in the snapshot, or 0 if limit is not in the snapshot.
 func (s *PreemptionLimitsSnapshot) allowance(limit policy.PreemptionLimitReference, scopeValue policy.PreemptionLimitScopeValue) int32 {

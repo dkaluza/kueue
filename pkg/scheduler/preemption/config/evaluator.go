@@ -64,6 +64,8 @@ type PreemptionEvaluator struct {
 	preemptionLimiter *limits.PreemptionLimiter
 	// retryAt is the earliest time a skipped candidate may become eligible.
 	retryAt *time.Time
+	// blockedLimit holds the earliest-clearing PreemptionLimitBlock across skipped candidates.
+	blockedLimit *policy.PreemptionLimitBlock
 }
 
 // NewPreemptionEvaluator returns the PreemptionEvaluator of the given preemptor for the
@@ -137,6 +139,15 @@ func (p *PreemptionEvaluator) RetryAt() *time.Time {
 		return nil
 	}
 	return p.retryAt
+}
+
+// BlockedLimit returns the earliest-clearing PreemptionLimitBlock across candidates
+// skipped so far, or nil if no candidate was skipped by a PreemptionLimit.
+func (p *PreemptionEvaluator) BlockedLimit() *policy.PreemptionLimitBlock {
+	if p == nil {
+		return nil
+	}
+	return p.blockedLimit
 }
 
 // FindCandidates evaluates candidates across applicable PreemptionConfig
@@ -217,12 +228,17 @@ func (p *PreemptionEvaluator) iterateOverCandidates(
 	preemptorCQ := snapshot.ClusterQueue(p.preemptor.ClusterQueue)
 	for _, candidate := range candidates {
 		targetCQ := snapshot.ClusterQueue(candidate.WlInfo.ClusterQueue)
+		var (
+			candidateBlocked    *policy.PreemptionLimitBlock
+			matchedWithinLimits bool
+		)
 		for ruleReference, selectorIndexes := range candidate.RuleNameToSelectorIndexes.InOrder {
-			consumedLimits, retryAt, withinLimits := budget.TryConsume(p.preemptor, candidate.WlInfo, ruleReference, preemptorCQ, targetCQ)
+			consumedLimits, blockedLimit, withinLimits := budget.TryConsume(p.preemptor, candidate.WlInfo, ruleReference, preemptorCQ, targetCQ)
 			if !withinLimits {
-				p.retryAt = cmputil.EarliestTime(p.retryAt, retryAt)
+				candidateBlocked = policy.EarlierPreemptionLimitBlock(candidateBlocked, blockedLimit)
 				continue
 			}
+			matchedWithinLimits = true
 			if !yield(&policy.Target{
 				WorkloadInfo: candidate.WlInfo,
 				Reason:       kueue.ConfigurablePreemptionReason,
@@ -241,6 +257,10 @@ func (p *PreemptionEvaluator) iterateOverCandidates(
 
 			// Only first matched rule within limits is processed per candidate.
 			break
+		}
+		if !matchedWithinLimits && candidateBlocked != nil {
+			p.retryAt = cmputil.EarliestTime(p.retryAt, candidateBlocked.RetryAt)
+			p.blockedLimit = policy.EarlierPreemptionLimitBlock(p.blockedLimit, candidateBlocked)
 		}
 	}
 	return

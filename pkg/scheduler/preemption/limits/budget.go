@@ -46,46 +46,67 @@ func (l *PreemptionLimiter) NewBudget() *PreemptionLimitBudget {
 // TryConsume takes one preemption from every limit that preempting target
 // consumes, and returns those limits.
 //
-// If any limit has no budget left, it takes nothing and returns false with the
-// earliest time all exhausted limits may have budget again, or nil if waiting
-// alone cannot free them.
+// If any limit has no budget left, it takes nothing and returns false along
+// with the strictest PreemptionLimitBlock across the exhausted limits on target.
 func (b *PreemptionLimitBudget) TryConsume(
 	preemptor, target *workload.Info,
 	ruleReference policy.PreemptionConfigRuleReference,
 	preemptorCQ, targetCQ *schdcache.ClusterQueueSnapshot,
-) (policy.ConsumedLimits, *time.Time, bool) {
+) (policy.ConsumedLimits, *policy.PreemptionLimitBlock, bool) {
 	consumedLimits := b.limiter.consumedLimits(preemptor, target, ruleReference, preemptorCQ, targetCQ)
 	if len(consumedLimits) == 0 {
 		return nil, nil, true
 	}
-	var (
-		blockingLimit policy.PreemptionLimitReference
-		retryAt       *time.Time
-	)
+	var blocking *policy.PreemptionLimitBlock
 	for limit, consumed := range consumedLimits {
 		if b.remaining(limit, consumed.ScopeValue) > 0 {
 			continue
 		}
 		slotTime := b.limiter.snapshot.nextSlotTime(limit, consumed.ScopeValue)
-		if slotTime == nil {
-			b.limiter.log.V(5).Info("Skipping preemption candidate exceeding a PreemptionLimit",
-				"candidate", klog.KObj(target.Obj), "preemptionLimit", limit, "scopeValue", consumed.ScopeValue)
-			return nil, nil, false
-		}
-		if retryAt == nil || slotTime.After(*retryAt) {
-			blockingLimit = limit
-			retryAt = slotTime
+		if stricterTargetBlock(limit, slotTime, blocking) {
+			blocking = &policy.PreemptionLimitBlock{
+				Limit:   limit,
+				Scope:   b.limiter.snapshot.scope(limit),
+				RetryAt: slotTime,
+			}
 		}
 	}
-	if retryAt != nil {
-		b.limiter.log.V(5).Info("Skipping preemption candidate exceeding a PreemptionLimit",
-			"candidate", klog.KObj(target.Obj), "preemptionLimit", blockingLimit, "scopeValue", consumedLimits[blockingLimit].ScopeValue, "nextSlotTime", *retryAt)
-		return nil, retryAt, false
+	if blocking != nil {
+		if blocking.RetryAt != nil {
+			b.limiter.log.V(5).Info("Skipping preemption candidate exceeding a PreemptionLimit",
+				"candidate", klog.KObj(target.Obj), "preemptionLimit", blocking.Limit, "scopeValue", consumedLimits[blocking.Limit].ScopeValue, "nextSlotTime", *blocking.RetryAt)
+		} else {
+			b.limiter.log.V(5).Info("Skipping preemption candidate exceeding a PreemptionLimit",
+				"candidate", klog.KObj(target.Obj), "preemptionLimit", blocking.Limit, "scopeValue", consumedLimits[blocking.Limit].ScopeValue)
+		}
+		return nil, blocking, false
 	}
 	for limit, consumed := range consumedLimits {
 		b.taken.add(limit, consumed.ScopeValue, 1)
 	}
 	return consumedLimits, nil, true
+}
+
+// stricterTargetBlock reports whether (limit, slotTime) clears later than current
+// on the same candidate (where nil means waiting alone never clears it), breaking
+// ties deterministically by Limit name.
+func stricterTargetBlock(limit policy.PreemptionLimitReference, slotTime *time.Time, current *policy.PreemptionLimitBlock) bool {
+	switch {
+	case current == nil:
+		return true
+	case slotTime == nil && current.RetryAt == nil:
+		return limit < current.Limit
+	case slotTime == nil:
+		return true
+	case current.RetryAt == nil:
+		return false
+	case slotTime.After(*current.RetryAt):
+		return true
+	case current.RetryAt.After(*slotTime):
+		return false
+	default:
+		return limit < current.Limit
+	}
 }
 
 // remaining returns how many more preemptions can be taken from this budget for limit and scopeValue.
