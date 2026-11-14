@@ -26,6 +26,7 @@ import (
 
 	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
+	utilslices "sigs.k8s.io/kueue/pkg/util/slices"
 )
 
 // pruneGracePeriod delays pruning past the window, so that readers whose
@@ -100,14 +101,15 @@ func trackedCopy(limit *kueuealpha.PreemptionLimit) *kueuealpha.PreemptionLimit 
 }
 
 // isCompatibleWith reports whether the tracked state can continue to be used
-// for limit, i.e. whether limit has the same UID, scope, and selectors that
-// this state was initialized with.
+// for limit, i.e. whether limit has the same UID, scope, selectors and ruleNames
+// that this state was initialized with
 func (ls limitState) isCompatibleWith(limit *kueuealpha.PreemptionLimit) bool {
 	return ls.limit.UID == limit.UID &&
 		ls.limit.Spec.Scope == limit.Spec.Scope &&
 		equality.Semantic.DeepEqual(ls.limit.Spec.ConfigSelector, limit.Spec.ConfigSelector) &&
 		equality.Semantic.DeepEqual(ls.limit.Spec.PreemptorClusterQueueSelector, limit.Spec.PreemptorClusterQueueSelector) &&
-		equality.Semantic.DeepEqual(ls.limit.Spec.PreemptedClusterQueueSelector, limit.Spec.PreemptedClusterQueueSelector)
+		equality.Semantic.DeepEqual(ls.limit.Spec.PreemptedClusterQueueSelector, limit.Spec.PreemptedClusterQueueSelector) &&
+		utilslices.CmpNoOrder(ls.limit.Spec.RuleNames, limit.Spec.RuleNames)
 }
 
 // counts returns the number of events within the window (windowStart, now] of

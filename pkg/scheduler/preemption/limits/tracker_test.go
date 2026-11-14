@@ -411,6 +411,31 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 			synced:        limitBase.Clone().Generation(2).Obj(),
 			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).Obj(), nil)),
 		},
+		"should reset events when first ruleName is added": {
+			initialLimits: tracked(trackedLimit(limit, ScopeEvents{"cq-a": {now}})),
+			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(),
+			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(), nil)),
+		},
+		"should reset events when ruleName is added": {
+			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1").Obj(), ScopeEvents{"cq-a": {now}})),
+			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-1", "test-rule-2").Obj(),
+			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-1", "test-rule-2").Obj(), nil)),
+		},
+		"should reset events when one of the ruleNames is removed": {
+			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1", "test-rule-2").Obj(), ScopeEvents{"cq-a": {now}})),
+			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(),
+			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(), nil)),
+		},
+		"should keep events when ruleNames are in different order": {
+			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1", "test-rule-2").Obj(), ScopeEvents{"cq-a": {now}})),
+			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-2", "test-rule-1").Obj(),
+			want:          tracked(withResetGeneration(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-2", "test-rule-1").Obj(), ScopeEvents{"cq-a": {now}}), 1)),
+		},
+		"should reset events when ruleNames entry got updated": {
+			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1").Obj(), ScopeEvents{"cq-a": {now}})),
+			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-2").Obj(),
+			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-2").Obj(), nil)),
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
