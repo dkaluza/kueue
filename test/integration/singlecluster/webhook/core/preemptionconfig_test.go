@@ -24,12 +24,14 @@ import (
 
 	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
+	utiltestingalpha "sigs.k8s.io/kueue/pkg/util/testing/v1alpha1"
 	"sigs.k8s.io/kueue/test/util/behavioral"
 )
 
 const (
-	minMaxValueErrorMessage   = "minValue must be less than or equal to maxValue"
-	negativeValueErrorMessage = "should be greater than or equal to 0"
+	minMaxValueErrorMessage        = "minValue must be less than or equal to maxValue"
+	negativeValueErrorMessage      = "should be greater than or equal to 0"
+	duplicateRuleNamesErrorMessage = "rule names must be unique"
 )
 
 func makePreemptionConfigWithNumericLabel(name string, minValue, maxValue *int32) *kueuealpha.PreemptionConfig {
@@ -88,6 +90,20 @@ var _ = ginkgo.Describe("PreemptionConfig Validation", func() {
 			ginkgo.Entry("Disallow negative maxValue", nil, ptr.To[int32](-1), negativeValueErrorMessage),
 			ginkgo.Entry("Disallow negative minValue with non-negative maxValue", ptr.To[int32](-1), ptr.To[int32](5), negativeValueErrorMessage),
 			ginkgo.Entry("Disallow negative minValue and maxValue", ptr.To[int32](-5), ptr.To[int32](-1), negativeValueErrorMessage),
+		)
+
+		ginkgo.DescribeTable("Validate PreemptionConfig",
+			func(config *kueuealpha.PreemptionConfig, wantErrMessage string) {
+				err := k8sClient.Create(ctx, config)
+				gomega.Expect(err).To(utiltesting.BeInvalidError())
+				gomega.Expect(err.Error()).To(gomega.ContainSubstring(wantErrMessage))
+			},
+			ginkgo.Entry("Disallow duplicate rule names",
+				utiltestingalpha.MakePreemptionConfig("config-with-duplicate-names").
+					Rule("duplicate-rule-name", kueuealpha.Always).
+					Rule("duplicate-rule-name", kueuealpha.InsufficientQuota).
+					Obj(),
+				duplicateRuleNamesErrorMessage),
 		)
 	})
 
