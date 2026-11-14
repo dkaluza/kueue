@@ -65,7 +65,7 @@ spec:
               description: spec defines the preemption rules of the PreemptionConfig.
               properties:
                 rules:
-                  description: rules specifies preemption candidate selection rules.
+                  description: rules specifies preemption candidate selection rules. Each rule must have a unique name.
                   items:
                     description: |-
                       PreemptionConfigPreemptionRule defines a single rule under which preemptions can be triggered
@@ -374,9 +374,10 @@ spec:
                     type: object
                   maxItems: 64
                   type: array
-                  x-kubernetes-list-map-keys:
-                    - name
-                  x-kubernetes-list-type: map
+                  x-kubernetes-list-type: atomic
+                  x-kubernetes-validations:
+                    - message: rule names must be unique
+                      rule: self.all(x, self.exists_one(y, x.name == y.name))
               type: object
           type: object
       served: true
