@@ -19,6 +19,7 @@ package core
 import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -92,18 +93,31 @@ var _ = ginkgo.Describe("PreemptionConfig Validation", func() {
 			ginkgo.Entry("Disallow negative minValue and maxValue", ptr.To[int32](-5), ptr.To[int32](-1), negativeValueErrorMessage),
 		)
 
-		ginkgo.DescribeTable("Validate PreemptionConfig",
-			func(config *kueuealpha.PreemptionConfig, wantErrMessage string) {
+		ginkgo.DescribeTable("Validate PreemptionConfig rule names",
+			func(config *kueuealpha.PreemptionConfig, matcher types.GomegaMatcher) {
 				err := k8sClient.Create(ctx, config)
-				gomega.Expect(err).To(utiltesting.BeInvalidError())
-				gomega.Expect(err.Error()).To(gomega.ContainSubstring(wantErrMessage))
+				if err == nil {
+					defer func() {
+						behavioral.ExpectObjectToBeDeleted(ctx, k8sClient, config, true)
+					}()
+				}
+				gomega.Expect(err).Should(matcher)
 			},
 			ginkgo.Entry("Disallow duplicate rule names",
 				utiltestingalpha.MakePreemptionConfig("config-with-duplicate-names").
 					Rule("duplicate-rule-name", kueuealpha.Always).
 					Rule("duplicate-rule-name", kueuealpha.InsufficientQuota).
 					Obj(),
-				duplicateRuleNamesErrorMessage),
+				gomega.And(
+					utiltesting.BeInvalidError(),
+					gomega.MatchError(gomega.ContainSubstring(duplicateRuleNamesErrorMessage))),
+			),
+			ginkgo.Entry("Allow multiple different rules",
+				utiltestingalpha.MakePreemptionConfig("config-with-different-names").
+					Rule("rule-name-1", kueuealpha.Always).
+					Rule("rule-name-2", kueuealpha.Always).
+					Obj(),
+				gomega.Succeed()),
 		)
 	})
 
@@ -157,6 +171,26 @@ var _ = ginkgo.Describe("PreemptionConfig Validation", func() {
 				err := k8sClient.Update(ctx, &fetched)
 				gomega.Expect(err).To(utiltesting.BeInvalidError())
 				gomega.Expect(err.Error()).To(gomega.ContainSubstring(negativeValueErrorMessage))
+			})
+		})
+
+		ginkgo.It("Should validate rule names", func() {
+			pc := utiltestingalpha.MakePreemptionConfig("config-with-rules").
+				Rule("rule-name-1", kueuealpha.Always).
+				Rule("rule-name-2", kueuealpha.Always).
+				Obj()
+			behavioral.MustCreate(ctx, k8sClient, pc)
+			ginkgo.DeferCleanup(func() {
+				behavioral.ExpectObjectToBeDeleted(ctx, k8sClient, pc, true)
+			})
+
+			ginkgo.By("Rejecting an update that sets a duplicate name", func() {
+				var fetched kueuealpha.PreemptionConfig
+				gomega.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pc), &fetched)).To(gomega.Succeed())
+				fetched.Spec.Rules[1].Name = fetched.Spec.Rules[0].Name
+				err := k8sClient.Update(ctx, &fetched)
+				gomega.Expect(err).To(utiltesting.BeInvalidError())
+				gomega.Expect(err.Error()).To(gomega.ContainSubstring(duplicateRuleNamesErrorMessage))
 			})
 		})
 	})
