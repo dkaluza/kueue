@@ -350,8 +350,9 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 	cases := map[string]struct {
 		initialLimits trackedLimits
 		// synced, if set, is passed to Sync instead of limit.
-		synced *kueuealpha.PreemptionLimit
-		want   trackedLimits
+		synced     *kueuealpha.PreemptionLimit
+		want       trackedLimits
+		wantResult bool
 	}{
 		"untracked limit starts being tracked": {
 			want: tracked(trackedLimit(limit, nil)),
@@ -390,41 +391,49 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 		"limit recreated with the same name resets the events": {
 			initialLimits: tracked(trackedLimit(recreatedLimit, ScopeEvents{"cq-a": {now}})),
 			want:          tracked(trackedLimit(limit, nil)),
+			wantResult:    true,
 		},
 		"scope change resets the events and updates the reset generation": {
 			initialLimits: tracked(trackedLimit(limit, ScopeEvents{"cq-a": {now}})),
 			synced:        rescoped,
 			want:          tracked(trackedLimit(rescoped, nil)),
+			wantResult:    true,
 		},
 		"config selector change resets the events": {
 			initialLimits: tracked(trackedLimit(limit, ScopeEvents{"cq-a": {now}})),
 			synced:        limitBase.Clone().Generation(2).ConfigSelector(selector("tier", "gold")).Obj(),
 			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).ConfigSelector(selector("tier", "gold")).Obj(), nil)),
+			wantResult:    true,
 		},
 		"preemptor ClusterQueue selector change resets the events": {
 			initialLimits: tracked(trackedLimit(limitBase.Clone().PreemptorClusterQueueSelector(selector("side", "preemptor")).Obj(), ScopeEvents{"cq-a": {now}})),
 			synced:        limitBase.Clone().Generation(2).PreemptorClusterQueueSelector(selector("side", "other")).Obj(),
 			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).PreemptorClusterQueueSelector(selector("side", "other")).Obj(), nil)),
+			wantResult:    true,
 		},
 		"preempted ClusterQueue selector change resets the events": {
 			initialLimits: tracked(trackedLimit(limitBase.Clone().PreemptedClusterQueueSelector(selector("side", "preempted")).Obj(), ScopeEvents{"cq-a": {now}})),
 			synced:        limitBase.Clone().Generation(2).Obj(),
 			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).Obj(), nil)),
+			wantResult:    true,
 		},
 		"should reset events when first ruleName is added": {
 			initialLimits: tracked(trackedLimit(limit, ScopeEvents{"cq-a": {now}})),
 			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(),
 			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(), nil)),
+			wantResult:    true,
 		},
 		"should reset events when ruleName is added": {
 			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1").Obj(), ScopeEvents{"cq-a": {now}})),
 			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-1", "test-rule-2").Obj(),
 			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-1", "test-rule-2").Obj(), nil)),
+			wantResult:    true,
 		},
 		"should reset events when one of the ruleNames is removed": {
 			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1", "test-rule-2").Obj(), ScopeEvents{"cq-a": {now}})),
 			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(),
 			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(), nil)),
+			wantResult:    true,
 		},
 		"should keep events when ruleNames are in different order": {
 			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1", "test-rule-2").Obj(), ScopeEvents{"cq-a": {now}})),
@@ -435,6 +444,7 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1").Obj(), ScopeEvents{"cq-a": {now}})),
 			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-2").Obj(),
 			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-2").Obj(), nil)),
+			wantResult:    true,
 		},
 	}
 	for name, tc := range cases {
@@ -447,7 +457,10 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 			if tc.synced != nil {
 				synced = tc.synced
 			}
-			tracker.Sync(synced)
+			gotResult := tracker.Sync(synced)
+			if diff := cmp.Diff(tc.wantResult, gotResult); diff != "" {
+				t.Errorf("Unexpected Sync return value (-want,+got):\n%s", diff)
+			}
 			if diff := cmp.Diff(tc.want, tracker.limits, cmpTrackedLimits...); diff != "" {
 				t.Errorf("Unexpected tracked limits (-want,+got):\n%s", diff)
 			}

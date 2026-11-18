@@ -208,17 +208,26 @@ func (t *PreemptionLimitTracker) Counts(now time.Time, limit policy.PreemptionLi
 //     the last reset generation;
 //   - limit or window change only: updates the stored limit while preserving
 //     recorded events and the last reset generation.
-func (t *PreemptionLimitTracker) Sync(limit *kueuealpha.PreemptionLimit) {
+//
+// Sync returns true when existing limit configuration was updated in a way
+// which required to clears recorded events.
+func (t *PreemptionLimitTracker) Sync(limit *kueuealpha.PreemptionLimit) bool {
 	ref := policy.PreemptionLimitReference(limit.Name)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	ls, found := t.limits[ref]
-	if !found || !ls.isCompatibleWith(limit) {
+	if !found {
 		t.limits[ref] = newLimitState(limit)
-		return
+		return false
+	}
+	if !ls.isCompatibleWith(limit) {
+		t.limits[ref] = newLimitState(limit)
+		return true
 	}
 	ls.limit = trackedCopy(limit)
 	t.limits[ref] = ls
+
+	return false
 }
 
 // Prune drops recorded events of limit that are older than its window ending at
