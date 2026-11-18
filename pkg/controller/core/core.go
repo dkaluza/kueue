@@ -155,7 +155,7 @@ func SetupControllers(mgr ctrl.Manager, qManager *qcache.Manager, cc *schdcache.
 		if opts.PreemptionLimitTracker == nil {
 			return "PreemptionLimit", errors.New("PreemptionLimitTracker is required when the ConfigurablePreemptionLimits feature gate is enabled")
 		}
-		plRec := NewPreemptionLimitReconciler(mgr.GetClient(), opts.PreemptionLimitTracker, opts.RoleTracker)
+		plRec := NewPreemptionLimitReconciler(mgr.GetClient(), opts.PreemptionLimitTracker, opts.RoleTracker, qManager)
 		if err := plRec.SetupWithManager(mgr); err != nil {
 			return "PreemptionLimit", err
 		}

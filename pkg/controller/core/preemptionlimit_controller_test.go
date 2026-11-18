@@ -32,16 +32,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
+	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
+	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
+	preemptexpectations "sigs.k8s.io/kueue/pkg/scheduler/preemption/expectations"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/limits"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
+	"sigs.k8s.io/kueue/pkg/util/roletracker"
 	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
 	utiltestingalpha "sigs.k8s.io/kueue/pkg/util/testing/v1alpha1"
+	utiltestingbeta "sigs.k8s.io/kueue/pkg/util/testing/v1beta2"
 )
 
 func TestPreemptionLimitReconcile(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	lastUpdateTime := new(metav1.NewTime(now))
 	errTest := errors.New("test error")
+	allClusterQueues := []kueue.ClusterQueueReference{"cq-a", "cq-b"}
 	limitBase := utiltestingalpha.MakePreemptionLimit("limit", kueuealpha.PreemptorCQLimitScope).Generation(1).Limit(10).LimitWindowSeconds(60)
 	limit := limitBase.Clone().Obj()
 	otherLimit := utiltestingalpha.MakePreemptionLimit("other-limit", kueuealpha.GlobalPreemptionLimitScope).Generation(1).LimitWindowSeconds(60).Obj()
@@ -94,7 +100,8 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 		// wantCounts are the preemptions within the window of "limit".
 		wantCounts policy.PreemptionLimitScopeCounts
 		// wantLimitStatus, if set, is the status of "limit" after the reconcile.
-		wantLimitStatus *kueuealpha.PreemptionLimitStatus
+		wantLimitStatus           *kueuealpha.PreemptionLimitStatus
+		wantRequeuedClusterQueues *[]kueue.ClusterQueueReference
 	}{
 		"unchanged limit keeps its events and reports them in its status": {
 			limit:      limit,
@@ -108,6 +115,7 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 					{Name: "cq-b", Value: 1},
 				},
 			},
+			wantRequeuedClusterQueues: &[]kueue.ClusterQueueReference{},
 		},
 		"limit and window change keep the events": {
 			limit:      limitBase.Clone().Generation(2).Limit(20).LimitWindowSeconds(2 * 3600).Obj(),
@@ -121,6 +129,7 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 					{Name: "cq-b", Value: 1},
 				},
 			},
+			wantRequeuedClusterQueues: &[]kueue.ClusterQueueReference{},
 		},
 		"scope change resets the events": {
 			limit:      limitBase.Clone().Generation(2).Scope(kueuealpha.PreemptedCQLimitScope).Obj(),
@@ -129,6 +138,7 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
 				LastUpdateTime: lastUpdateTime,
 			},
+			wantRequeuedClusterQueues: &allClusterQueues,
 		},
 		"selector change resets the events": {
 			limit: limitBase.Clone().
@@ -140,6 +150,7 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
 				LastUpdateTime: lastUpdateTime,
 			},
+			wantRequeuedClusterQueues: &allClusterQueues,
 		},
 		"no events within the window produce empty status counts": {
 			limit:      limit,
@@ -148,6 +159,7 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
 				LastUpdateTime: lastUpdateTime,
 			},
+			wantRequeuedClusterQueues: &[]kueue.ClusterQueueReference{},
 		},
 		"status counts are sorted by value descending and then by name ascending": {
 			limit:      limit,
@@ -175,7 +187,8 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			},
 		},
 		"deleted limit is forgotten": {
-			recorded: seeded,
+			recorded:                  seeded,
+			wantRequeuedClusterQueues: &allClusterQueues,
 		},
 		"get error other than NotFound is returned and the events are kept": {
 			limit:    limit,
@@ -185,8 +198,9 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 					return errTest
 				},
 			},
-			wantErr:    errTest,
-			wantCounts: policy.PreemptionLimitScopeCounts{"cq-a": 1, "cq-b": 1},
+			wantErr:                   errTest,
+			wantCounts:                policy.PreemptionLimitScopeCounts{"cq-a": 1, "cq-b": 1},
+			wantRequeuedClusterQueues: &[]kueue.ClusterQueueReference{},
 		},
 		"status update error is returned and the events are kept": {
 			limit:    limit,
@@ -196,8 +210,9 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 					return errTest
 				},
 			},
-			wantErr:    errTest,
-			wantCounts: policy.PreemptionLimitScopeCounts{"cq-a": 1, "cq-b": 1},
+			wantErr:                   errTest,
+			wantCounts:                policy.PreemptionLimitScopeCounts{"cq-a": 1, "cq-b": 1},
+			wantRequeuedClusterQueues: &[]kueue.ClusterQueueReference{},
 		},
 	}
 	for name, tc := range cases {
@@ -222,9 +237,18 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 					},
 				}).
 				Build()
+
+			preemptionExpectations := preemptexpectations.New()
+			qManager, requeuer := qcache.NewManagerForUnitTestsWithRequeuer(cl, nil, qcache.WithPreemptionExpectations(preemptionExpectations))
+			for _, cq := range allClusterQueues {
+				qManager.AddClusterQueue(ctx, utiltestingbeta.MakeClusterQueue(string(cq)).Obj())
+			}
+
 			tracker := limits.NewPreemptionLimitTracker()
-			reconciler := NewPreemptionLimitReconciler(cl, tracker, nil)
+			roleTracker := roletracker.NewFakeRoleTracker(roletracker.RoleLeader)
+			reconciler := NewPreemptionLimitReconciler(cl, tracker, roleTracker, qManager)
 			reconciler.clock = testingclock.NewFakeClock(now)
+
 			// Preemptions are only recorded for the reconciled PreemptionLimits.
 			for _, l := range []*kueuealpha.PreemptionLimit{limit, otherLimit} {
 				if _, err := reconciler.Reconcile(ctx, reconcile.Request{Name: l.Name}); err != nil {
@@ -235,6 +259,9 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 				tracker.Record(ts, consumedLimits)
 			}
 			tracker.Record(now, policy.ConsumedLimits{"other-limit": policy.NewConsumedLimit(otherLimit, policy.GlobalScopeValue)})
+
+			// Clean up queued workloads if there were some before testing
+			requeuer.ProcessRequeues(ctx)
 
 			if tc.limit == nil {
 				if err := cl.Delete(ctx, limit); err != nil {
@@ -274,6 +301,16 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 				}
 				if diff := cmp.Diff(*tc.wantLimitStatus, got.Status); diff != "" {
 					t.Errorf("Unexpected PreemptionLimitStatus (-want,+got):\n%s", diff)
+				}
+			}
+			if tc.wantRequeuedClusterQueues != nil {
+				gotRequeuedClusterQueue := requeuer.NotifiedClusterQueues()
+
+				opts := cmpopts.SortSlices(func(a, b kueue.ClusterQueueReference) bool {
+					return string(a) < string(b)
+				})
+				if diff := cmp.Diff(*tc.wantRequeuedClusterQueues, gotRequeuedClusterQueue, opts); diff != "" {
+					t.Errorf("Unexpected requeued cluster queues (-want,+got):\n%s", diff)
 				}
 			}
 		})
