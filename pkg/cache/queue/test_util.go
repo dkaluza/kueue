@@ -77,8 +77,8 @@ func (r *testInadmissibleWorkloadRequeuer) CohortDelays() map[kueue.CohortRefere
 	return maps.Clone(r.cohortDelays)
 }
 
-func (r *testInadmissibleWorkloadRequeuer) NotifiedClusterQueues() []kueue.ClusterQueueReference {
-	return r.cqs.UnsortedList()
+func (r *testInadmissibleWorkloadRequeuer) NotifiedClusterQueues() sets.Set[kueue.ClusterQueueReference] {
+	return r.cqs.Clone()
 }
 
 // ProcessRequeues requeues all the inadmissible workloads belonging to
