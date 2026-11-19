@@ -95,6 +95,7 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 		// limit is "limit" when it is reconciled, or nil once deleted.
 		limit       *kueuealpha.PreemptionLimit
 		recorded    recorded
+		opts        []PreemptionLimitReconcilerOption
 		clientFuncs interceptor.Funcs
 		wantResult  reconcile.Result
 		wantErr     error
@@ -108,6 +109,13 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 		// handled this deletion by removing in-memory state.
 		simulateForgottenLimit bool
 	}{
+		"custom prune interval overrides RequeueAfter": {
+			limit:      limit,
+			recorded:   seeded,
+			opts:       []PreemptionLimitReconcilerOption{WithPreemptionLimitPruneInterval(100 * time.Millisecond)},
+			wantResult: reconcile.Result{RequeueAfter: 100 * time.Millisecond},
+			wantCounts: policy.PreemptionLimitScopeCounts{"cq-a": 1, "cq-b": 1},
+		},
 		"unchanged limit keeps its events and reports them in its status": {
 			limit:      limit,
 			recorded:   seeded,
@@ -314,9 +322,8 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 
 			tracker := limits.NewPreemptionLimitTracker()
 			roleTracker := roletracker.NewFakeRoleTracker(roletracker.RoleLeader)
-			reconciler := NewPreemptionLimitReconciler(cl, tracker, roleTracker, qManager)
-			reconciler.clock = testingclock.NewFakeClock(now)
-
+			reconcilerOpts := append([]PreemptionLimitReconcilerOption{WithPreemptionLimitClock(testingclock.NewFakeClock(now))}, tc.opts...)
+			reconciler := NewPreemptionLimitReconciler(cl, tracker, roleTracker, qManager, reconcilerOpts...)
 			// Preemptions are only recorded for the reconciled PreemptionLimits.
 			for _, l := range []*kueuealpha.PreemptionLimit{limit, otherLimit} {
 				if _, err := reconciler.Reconcile(ctx, reconcile.Request{Name: l.Name}); err != nil {
@@ -379,6 +386,28 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 				if diff := cmp.Diff(*tc.wantRequeuedClusterQueues, gotRequeuedClusterQueue); diff != "" {
 					t.Errorf("Unexpected requeued cluster queues (-want,+got):\n%s", diff)
 				}
+			}
+		})
+	}
+}
+
+func TestPreemptionLimitSetupWithManagerInvalidOptions(t *testing.T) {
+	for name, opt := range map[string]PreemptionLimitReconcilerOption{
+		"zero interval":     WithPreemptionLimitPruneInterval(0),
+		"negative interval": WithPreemptionLimitPruneInterval(-time.Second),
+		"nil clock":         WithPreemptionLimitClock(nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			cl := utiltesting.NewClientBuilder().Build()
+			reconciler := NewPreemptionLimitReconciler(
+				cl,
+				limits.NewPreemptionLimitTracker(),
+				nil,
+				nil,
+				opt,
+			)
+			if err := reconciler.SetupWithManager(nil); err == nil {
+				t.Errorf("Expected SetupWithManager() to fail for %s, got nil", name)
 			}
 		})
 	}

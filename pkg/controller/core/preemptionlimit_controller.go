@@ -19,6 +19,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"errors"
 	"slices"
 	"time"
 
@@ -49,11 +50,30 @@ const preemptionLimitCountMaxItems = 1000
 // PreemptionLimitReconciler aligns the in-memory representation of the PreemptionLimits
 // (see PreemptionLimitTracker) with their current specs.
 type PreemptionLimitReconciler struct {
-	client      client.Client
-	tracker     *limits.PreemptionLimitTracker
-	clock       clock.Clock
-	roleTracker *roletracker.RoleTracker
-	manager     *qcache.Manager
+	client        client.Client
+	tracker       *limits.PreemptionLimitTracker
+	clock         clock.Clock
+	roleTracker   *roletracker.RoleTracker
+	manager       *qcache.Manager
+	pruneInterval time.Duration
+}
+
+// PreemptionLimitReconcilerOption configures a PreemptionLimitReconciler.
+type PreemptionLimitReconcilerOption func(*PreemptionLimitReconciler)
+
+// WithPreemptionLimitPruneInterval overrides how often expired preemption events
+// are pruned and status is updated. Must be positive.
+func WithPreemptionLimitPruneInterval(interval time.Duration) PreemptionLimitReconcilerOption {
+	return func(r *PreemptionLimitReconciler) {
+		r.pruneInterval = interval
+	}
+}
+
+// WithPreemptionLimitClock overrides the clock used by the reconciler. Must not be nil.
+func WithPreemptionLimitClock(c clock.Clock) PreemptionLimitReconcilerOption {
+	return func(r *PreemptionLimitReconciler) {
+		r.clock = c
+	}
 }
 
 var _ reconcile.Reconciler = (*PreemptionLimitReconciler)(nil)
@@ -63,14 +83,20 @@ func NewPreemptionLimitReconciler(
 	tracker *limits.PreemptionLimitTracker,
 	roleTracker *roletracker.RoleTracker,
 	manager *qcache.Manager,
+	opts ...PreemptionLimitReconcilerOption,
 ) *PreemptionLimitReconciler {
-	return &PreemptionLimitReconciler{
-		client:      client,
-		tracker:     tracker,
-		clock:       realClock,
-		roleTracker: roleTracker,
-		manager:     manager,
+	r := &PreemptionLimitReconciler{
+		client:        client,
+		tracker:       tracker,
+		clock:         realClock,
+		roleTracker:   roleTracker,
+		manager:       manager,
+		pruneInterval: preemptionLimitPruneInterval,
 	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=preemptionlimits,verbs=get;list;watch
@@ -120,7 +146,7 @@ func (r *PreemptionLimitReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	return ctrl.Result{RequeueAfter: preemptionLimitPruneInterval}, nil
+	return ctrl.Result{RequeueAfter: r.pruneInterval}, nil
 }
 
 func (r *PreemptionLimitReconciler) preemptionLimitStatus(now time.Time, limit *kueuealpha.PreemptionLimit) kueuealpha.PreemptionLimitStatus {
@@ -157,6 +183,12 @@ func (r *PreemptionLimitReconciler) preemptionLimitStatus(now time.Time, limit *
 // leader election, so the controller runs only on the leader, where the scheduler
 // records the preemption events.
 func (r *PreemptionLimitReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.pruneInterval <= 0 {
+		return errors.New("PreemptionLimit prune interval must be positive")
+	}
+	if r.clock == nil {
+		return errors.New("PreemptionLimit clock must not be nil")
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("preemptionlimit_controller").
 		// Make sure that update to the status part aren't triggering additional Reconcile.

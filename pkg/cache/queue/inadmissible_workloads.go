@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/clock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -37,6 +38,7 @@ const requeueBatchPeriod = time.Second
 
 type requeuerOptions struct {
 	batchPeriod time.Duration
+	clock       clock.WithTicker
 }
 
 type RequeuerOption func(*requeuerOptions)
@@ -44,6 +46,13 @@ type RequeuerOption func(*requeuerOptions)
 func WithBatchPeriod(period time.Duration) RequeuerOption {
 	return func(o *requeuerOptions) {
 		o.batchPeriod = period
+	}
+}
+
+// WithRequeuerClock sets the clock used by the delaying queue.
+func WithRequeuerClock(c clock.WithTicker) RequeuerOption {
+	return func(o *requeuerOptions) {
+		o.clock = c
 	}
 }
 
@@ -260,7 +269,9 @@ func NewRequeuer(opts ...RequeuerOption) *workqueueRequeuer {
 		opt(&options)
 	}
 	return &workqueueRequeuer{
-		queue:       workqueue.NewTypedDelayingQueue[requeueRequest](),
+		queue: workqueue.NewTypedDelayingQueueWithConfig(workqueue.TypedDelayingQueueConfig[requeueRequest]{
+			Clock: options.clock,
+		}),
 		batchPeriod: options.batchPeriod,
 	}
 }

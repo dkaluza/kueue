@@ -18,6 +18,7 @@ import (
 	"context"
 	"time"
 
+	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
@@ -30,10 +31,24 @@ func NewManager(ctx context.Context, client client.Client, checker qcache.Status
 }
 
 func NewManagerWithBatchPeriod(ctx context.Context, client client.Client, checker qcache.StatusChecker, batchPeriod time.Duration, options ...qcache.Option) *qcache.Manager {
-	requeuer := qcache.NewRequeuer(qcache.WithBatchPeriod(batchPeriod))
+	return NewManagerWithClock(ctx, client, checker, batchPeriod, clock.RealClock{}, options...)
+}
+
+// NewManagerWithClock configures both the Manager and its inadmissible Requeuer
+// with the given batchPeriod and clk.
+func NewManagerWithClock(
+	ctx context.Context,
+	client client.Client,
+	checker qcache.StatusChecker,
+	batchPeriod time.Duration,
+	clk clock.WithTickerAndDelayedExecution,
+	options ...qcache.Option,
+) *qcache.Manager {
+	requeuer := qcache.NewRequeuer(qcache.WithBatchPeriod(batchPeriod), qcache.WithRequeuerClock(clk))
 	go func() {
 		// ignore error to make linter happy.
 		_ = requeuer.Start(ctx)
 	}()
+	options = append([]qcache.Option{qcache.WithClock(clk)}, options...)
 	return qcache.NewManager(client, checker, requeuer, options...)
 }
