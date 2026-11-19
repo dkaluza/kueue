@@ -125,7 +125,6 @@ func (r *PreemptionLimitReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			removed := r.tracker.Forget(policy.PreemptionLimitReference(req.Name))
 
 			if removed {
-				ctrl.LoggerFrom(ctx).V(2).Info("removed", "here", "true")
 				qcache.NotifyRetryInadmissible(r.manager, sets.New(r.manager.GetClusterQueueNames()...))
 			}
 		}
