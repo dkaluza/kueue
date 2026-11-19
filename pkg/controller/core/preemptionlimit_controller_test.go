@@ -159,7 +159,7 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			wantRequeuedClusterQueues: &allClusterQueues,
 		},
 		"limit decrease keeps the events but doesn't requeue": {
-			limit:      limitBase.Clone().Generation(2).Limit(20).Obj(),
+			limit:      limitBase.Clone().Generation(2).Limit(5).Obj(),
 			recorded:   seeded,
 			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
 			wantCounts: policy.PreemptionLimitScopeCounts{"cq-a": 1, "cq-b": 1},
@@ -170,7 +170,7 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 					{Name: "cq-b", Value: 1},
 				},
 			},
-			wantRequeuedClusterQueues: &allClusterQueues,
+			wantRequeuedClusterQueues: new(sets.New[kueue.ClusterQueueReference]()),
 		},
 		"window increase keeps the events and doesn't requeues": {
 			limit:      limitBase.Clone().Generation(2).LimitWindowSeconds(2 * 3600).Obj(),
