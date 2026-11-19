@@ -355,11 +355,13 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 		wantResult bool
 	}{
 		"untracked limit starts being tracked": {
-			want: tracked(trackedLimit(limit, nil)),
+			want:       tracked(trackedLimit(limit, nil)),
+			wantResult: false,
 		},
 		"untracked limit starts being tracked with its selectors": {
-			synced: allSelectors,
-			want:   tracked(trackedLimit(allSelectors, nil)),
+			synced:     allSelectors,
+			want:       tracked(trackedLimit(allSelectors, nil)),
+			wantResult: false,
 		},
 		"other limits are untouched": {
 			initialLimits: tracked(
@@ -371,22 +373,26 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 				withResetGeneration(trackedLimit(limitAndWindowIncreased, ScopeEvents{"cq-a": {now}}), 1),
 				trackedLimit(otherLimit, ScopeEvents{policy.GlobalScopeValue: {now}}),
 			),
+			wantResult: false,
 		},
 		"limit and window increase update the limit, and keep the events and the reset generation": {
 			initialLimits: tracked(trackedLimit(limit, ScopeEvents{"cq-a": {expired, now}})),
 			synced:        limitAndWindowIncreased,
 			// The expired event is kept because the limit and window increased, and the reset generation is updated to the new limit's generation.
-			want: tracked(withResetGeneration(trackedLimit(limitAndWindowIncreased, ScopeEvents{"cq-a": {expired, now}}), 1)),
+			want:       tracked(withResetGeneration(trackedLimit(limitAndWindowIncreased, ScopeEvents{"cq-a": {expired, now}}), 1)),
+			wantResult: false,
 		},
 		"window decrease updates the limit, and keeps the events and the reset generation": {
 			initialLimits: tracked(trackedLimit(limit, ScopeEvents{"cq-a": {expired, now}})),
 			synced:        windowHalved,
 			want:          tracked(withResetGeneration(trackedLimit(windowHalved, ScopeEvents{"cq-a": {expired, now}}), 1)),
+			wantResult:    false,
 		},
 		"unchanged selectors keep the events": {
 			initialLimits: tracked(trackedLimit(allSelectors, ScopeEvents{"cq-a": {now}})),
 			synced:        allSelectors,
 			want:          tracked(trackedLimit(allSelectors, ScopeEvents{"cq-a": {now}})),
+			wantResult:    false,
 		},
 		"limit recreated with the same name resets the events": {
 			initialLimits: tracked(trackedLimit(recreatedLimit, ScopeEvents{"cq-a": {now}})),
@@ -439,6 +445,7 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1", "test-rule-2").Obj(), ScopeEvents{"cq-a": {now}})),
 			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-2", "test-rule-1").Obj(),
 			want:          tracked(withResetGeneration(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-2", "test-rule-1").Obj(), ScopeEvents{"cq-a": {now}}), 1)),
+			wantResult:    false,
 		},
 		"should reset events when ruleNames entry got updated": {
 			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1").Obj(), ScopeEvents{"cq-a": {now}})),

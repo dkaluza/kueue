@@ -210,19 +210,15 @@ func (t *PreemptionLimitTracker) Counts(now time.Time, limit policy.PreemptionLi
 //     recorded events and the last reset generation.
 //
 // Sync returns true when existing limit configuration was updated in a way
-// which required to clears recorded events.
+// which required to clear recorded events.
 func (t *PreemptionLimitTracker) Sync(limit *kueuealpha.PreemptionLimit) bool {
 	ref := policy.PreemptionLimitReference(limit.Name)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	ls, found := t.limits[ref]
-	if !found {
+	if !found || !ls.isCompatibleWith(limit) {
 		t.limits[ref] = newLimitState(limit)
-		return false
-	}
-	if !ls.isCompatibleWith(limit) {
-		t.limits[ref] = newLimitState(limit)
-		return true
+		return found
 	}
 	ls.limit = trackedCopy(limit)
 	t.limits[ref] = ls
