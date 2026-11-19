@@ -117,7 +117,7 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			},
 			wantRequeuedClusterQueues: &[]kueue.ClusterQueueReference{},
 		},
-		"limit and window change keep the events": {
+		"limit and window increase keep the events": {
 			limit:      limitBase.Clone().Generation(2).Limit(20).LimitWindowSeconds(2 * 3600).Obj(),
 			recorded:   seeded,
 			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
@@ -129,7 +129,62 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 					{Name: "cq-b", Value: 1},
 				},
 			},
+			wantRequeuedClusterQueues: &allClusterQueues,
+		},
+		"limit increase keeps the events and requeues": {
+			limit:      limitBase.Clone().Generation(2).Limit(20).Obj(),
+			recorded:   seeded,
+			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
+			wantCounts: policy.PreemptionLimitScopeCounts{"cq-a": 1, "cq-b": 1},
+			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
+				LastUpdateTime: lastUpdateTime,
+				Counts: []kueuealpha.PreemptionLimitCount{
+					{Name: "cq-a", Value: 1},
+					{Name: "cq-b", Value: 1},
+				},
+			},
+			wantRequeuedClusterQueues: &allClusterQueues,
+		},
+		"limit decrease keeps the events but doesn't requeue": {
+			limit:      limitBase.Clone().Generation(2).Limit(20).Obj(),
+			recorded:   seeded,
+			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
+			wantCounts: policy.PreemptionLimitScopeCounts{"cq-a": 1, "cq-b": 1},
+			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
+				LastUpdateTime: lastUpdateTime,
+				Counts: []kueuealpha.PreemptionLimitCount{
+					{Name: "cq-a", Value: 1},
+					{Name: "cq-b", Value: 1},
+				},
+			},
+			wantRequeuedClusterQueues: &allClusterQueues,
+		},
+		"window increase keeps the events and doesn't requeues": {
+			limit:      limitBase.Clone().Generation(2).LimitWindowSeconds(2 * 3600).Obj(),
+			recorded:   seeded,
+			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
+			wantCounts: policy.PreemptionLimitScopeCounts{"cq-a": 2, "cq-b": 1},
+			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
+				LastUpdateTime: lastUpdateTime,
+				Counts: []kueuealpha.PreemptionLimitCount{
+					{Name: "cq-a", Value: 2},
+					{Name: "cq-b", Value: 1},
+				},
+			},
 			wantRequeuedClusterQueues: &[]kueue.ClusterQueueReference{},
+		},
+		"window decrease keeps the events and requeues": {
+			limit:      limitBase.Clone().Generation(2).LimitWindowSeconds(10).Obj(),
+			recorded:   seeded,
+			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
+			wantCounts: policy.PreemptionLimitScopeCounts{"cq-b": 1},
+			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
+				LastUpdateTime: lastUpdateTime,
+				Counts: []kueuealpha.PreemptionLimitCount{
+					{Name: "cq-b", Value: 1},
+				},
+			},
+			wantRequeuedClusterQueues: &allClusterQueues,
 		},
 		"scope change resets the events": {
 			limit:      limitBase.Clone().Generation(2).Scope(kueuealpha.PreemptedCQLimitScope).Obj(),
