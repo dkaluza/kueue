@@ -375,12 +375,36 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 			),
 			wantResult: true,
 		},
+		"limit increase updates the limit, and keeps the events and the reset generation": {
+			initialLimits: tracked(trackedLimit(limit, ScopeEvents{"cq-a": {expired, now}})),
+			synced:        limitBase.Clone().Generation(2).Limit(10).Obj(),
+			want:          tracked(withResetGeneration(trackedLimit(limitBase.Clone().Generation(2).Limit(10).Obj(), ScopeEvents{"cq-a": {expired, now}}), 1)),
+			wantResult:    true,
+		},
+		"limit decrease updates the limit, and keeps the events and the reset generation": {
+			initialLimits: tracked(trackedLimit(limitBase.Clone().Limit(10).Obj(), ScopeEvents{"cq-a": {expired, now}})),
+			synced:        limitBase.Clone().Generation(2).Limit(5).Obj(),
+			want:          tracked(withResetGeneration(trackedLimit(limitBase.Clone().Generation(2).Limit(5).Obj(), ScopeEvents{"cq-a": {expired, now}}), 1)),
+			wantResult:    false,
+		},
 		"limit and window increase update the limit, and keep the events and the reset generation": {
 			initialLimits: tracked(trackedLimit(limit, ScopeEvents{"cq-a": {expired, now}})),
 			synced:        limitAndWindowIncreased,
 			// The expired event is kept because the limit and window increased, and the reset generation is updated to the new limit's generation.
 			want:       tracked(withResetGeneration(trackedLimit(limitAndWindowIncreased, ScopeEvents{"cq-a": {expired, now}}), 1)),
 			wantResult: true,
+		},
+		"limit and window decrease update the limit, and keep the events and the reset generation": {
+			initialLimits: tracked(trackedLimit(limitBase.Clone().Limit(10).Obj(), ScopeEvents{"cq-a": {expired, now}})),
+			synced:        limitBase.Clone().Generation(2).Limit(5).LimitWindowSeconds(10).Obj(),
+			want:          tracked(withResetGeneration(trackedLimit(limitBase.Clone().Generation(2).Limit(5).LimitWindowSeconds(10).Obj(), ScopeEvents{"cq-a": {expired, now}}), 1)),
+			wantResult:    true,
+		},
+		"window increase updates the limit, and keeps the events and the reset generation": {
+			initialLimits: tracked(trackedLimit(limit, ScopeEvents{"cq-a": {expired, now}})),
+			synced:        limitBase.Clone().Generation(2).LimitWindowSeconds(windowSeconds + 1).Obj(),
+			want:          tracked(withResetGeneration(trackedLimit(limitBase.Clone().Generation(2).LimitWindowSeconds(windowSeconds+1).Obj(), ScopeEvents{"cq-a": {expired, now}}), 1)),
+			wantResult:    false,
 		},
 		"window decrease updates the limit, and keeps the events and the reset generation": {
 			initialLimits: tracked(trackedLimit(limit, ScopeEvents{"cq-a": {expired, now}})),

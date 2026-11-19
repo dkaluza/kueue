@@ -77,6 +77,8 @@ func (r *testInadmissibleWorkloadRequeuer) CohortDelays() map[kueue.CohortRefere
 	return maps.Clone(r.cohortDelays)
 }
 
+// NotifiedClusterQueues returns standalone (cohort-less) ClusterQueues notified
+// since the last ProcessRequeues.
 func (r *testInadmissibleWorkloadRequeuer) NotifiedClusterQueues() sets.Set[kueue.ClusterQueueReference] {
 	return r.cqs.Clone()
 }
