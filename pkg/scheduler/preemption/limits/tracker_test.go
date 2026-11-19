@@ -601,26 +601,32 @@ func TestPreemptionLimitTrackerForget(t *testing.T) {
 	cases := map[string]struct {
 		initialLimits trackedLimits
 		want          trackedLimits
+		wantResult    bool
 	}{
 		"only the given limit is forgotten": {
 			initialLimits: tracked(
 				trackedLimit(forgottenLimit, ScopeEvents{"cq-a": {now}, "cq-b": {now}}),
 				trackedLimit(otherLimit, ScopeEvents{policy.GlobalScopeValue: {now}}),
 			),
-			want: tracked(trackedLimit(otherLimit, ScopeEvents{policy.GlobalScopeValue: {now}})),
+			want:       tracked(trackedLimit(otherLimit, ScopeEvents{policy.GlobalScopeValue: {now}})),
+			wantResult: true,
 		},
 		"unknown limit is a no-op": {
 			initialLimits: tracked(trackedLimit(otherLimit, ScopeEvents{policy.GlobalScopeValue: {now}})),
 			want:          tracked(trackedLimit(otherLimit, ScopeEvents{policy.GlobalScopeValue: {now}})),
+			wantResult:    false,
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			tracker := NewPreemptionLimitTracker()
 			tracker.limits = tc.initialLimits
-			tracker.Forget(policy.PreemptionLimitReference(forgottenLimit.Name))
+			gotResult := tracker.Forget(policy.PreemptionLimitReference(forgottenLimit.Name))
 			if diff := cmp.Diff(tc.want, tracker.limits, cmpTrackedLimits...); diff != "" {
 				t.Errorf("Unexpected tracked limits (-want,+got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantResult, gotResult); diff != "" {
+				t.Errorf("Unexpected result returned (-want,+got):\n%s", diff)
 			}
 		})
 	}

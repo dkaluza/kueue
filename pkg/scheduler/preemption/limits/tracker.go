@@ -256,8 +256,17 @@ func (t *PreemptionLimitTracker) Prune(now time.Time, limit policy.PreemptionLim
 }
 
 // Forget stops tracking limit, dropping all its events.
-func (t *PreemptionLimitTracker) Forget(limit policy.PreemptionLimitReference) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.limits, limit)
+// Returns true if limit was present and got successfully removed.
+func (t *PreemptionLimitTracker) Forget(limit policy.PreemptionLimitReference) bool {
+	t.mu.RLock()
+	_, found := t.limits[limit]
+	t.mu.RUnlock()
+
+	if found {
+		t.mu.Lock()
+		delete(t.limits, limit)
+		t.mu.Unlock()
+	}
+
+	return found
 }

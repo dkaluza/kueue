@@ -102,6 +102,10 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 		// wantLimitStatus, if set, is the status of "limit" after the reconcile.
 		wantLimitStatus           *kueuealpha.PreemptionLimitStatus
 		wantRequeuedClusterQueues *[]kueue.ClusterQueueReference
+
+		// Simulate a case when PreemptionLimit was deleted and reconcile already
+		// handled this deletion by removing in-memory state.
+		simulateForgottenLimit bool
 	}{
 		"unchanged limit keeps its events and reports them in its status": {
 			limit:      limit,
@@ -245,6 +249,12 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			recorded:                  seeded,
 			wantRequeuedClusterQueues: &allClusterQueues,
 		},
+		// It is possible for a previously scheduled reconcile to be executed after a limit
+		// was already deleted and state was removed. In this case there should be no additional handling.
+		"should do nothing for previously deleted limit without a state": {
+			simulateForgottenLimit:    true,
+			wantRequeuedClusterQueues: &[]kueue.ClusterQueueReference{},
+		},
 		"get error other than NotFound is returned and the events are kept": {
 			limit:    limit,
 			recorded: seeded,
@@ -321,6 +331,9 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			if tc.limit == nil {
 				if err := cl.Delete(ctx, limit); err != nil {
 					t.Fatalf("Failed to delete PreemptionLimit: %v", err)
+				}
+				if tc.simulateForgottenLimit {
+					tracker.Forget(policy.PreemptionLimitReference(limit.Name))
 				}
 			} else if tc.limit != limit {
 				var current kueuealpha.PreemptionLimit
