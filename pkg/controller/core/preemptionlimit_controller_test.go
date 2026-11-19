@@ -307,7 +307,9 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			preemptionExpectations := preemptexpectations.New()
 			qManager, requeuer := qcache.NewManagerForUnitTestsWithRequeuer(cl, nil, qcache.WithPreemptionExpectations(preemptionExpectations))
 			for cq := range allClusterQueues {
-				qManager.AddClusterQueue(ctx, utiltestingbeta.MakeClusterQueue(string(cq)).Obj())
+				if err := qManager.AddClusterQueue(ctx, utiltestingbeta.MakeClusterQueue(string(cq)).Obj()); err != nil {
+					t.Fatalf("Failed adding clusterQueue %s: %v", string(cq), err)
+				}
 			}
 
 			tracker := limits.NewPreemptionLimitTracker()
