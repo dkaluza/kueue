@@ -121,10 +121,10 @@ func (r *PreemptionLimitReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if apierrors.IsNotFound(err) {
 			// Preemptions picked before the deletion but recorded after it are
 			// dropped by Record, as the PreemptionLimit is no longer tracked.
-			ctrl.LoggerFrom(ctx).V(2).Info("PreemptionLimit is deleted, forgetting its preemption events")
 			removed := r.tracker.Forget(policy.PreemptionLimitReference(req.Name))
 
 			if removed {
+				ctrl.LoggerFrom(ctx).V(2).Info("PreemptionLimit is deleted, forgetting its preemption events")
 				qcache.NotifyRetryInadmissible(r.manager, sets.New(r.manager.GetClusterQueueNames()...))
 			}
 		}
