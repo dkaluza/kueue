@@ -46,7 +46,7 @@ import (
 
 func TestPreemptionLimitReconcile(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	lastUpdateTime := new(metav1.NewTime(now))
+	lastUpdateTime := metav1.NewTime(now)
 	errTest := errors.New("test error")
 	allClusterQueues := sets.New[kueue.ClusterQueueReference]("cq-a", "cq-b", "cq-c", "cq-d")
 	limitBase := utiltestingalpha.MakePreemptionLimit("limit", kueuealpha.ByPreemptorCQLimitAggregation).Generation(1).Limit(10).LimitWindowSeconds(60)
@@ -73,20 +73,20 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 		now.Add(-1 * time.Second): limitConsumed("cq-c"),
 		now:                       limitConsumed("cq-c"),
 	}
-	overMaxPreemptions := make(recorded, preemptionLimitCountMaxItems+2)
+	overMaxPreemptions := make(recorded, preemptionLimitTopAggregatedCountsMaxItems+2)
 	overMaxPreemptions[now] = limitConsumed("high")
 	overMaxPreemptions[now.Add(-time.Millisecond)] = limitConsumed("high")
 	overMaxCounts := policy.PreemptionLimitAggregationCounts{"high": 2}
-	for i := range preemptionLimitCountMaxItems {
+	for i := range preemptionLimitTopAggregatedCountsMaxItems {
 		aggregationKey := policy.PreemptionLimitAggregationKey(fmt.Sprintf("cq-%04d", i))
 		overMaxPreemptions[now.Add(-time.Duration(i+2)*time.Millisecond)] = limitConsumed(aggregationKey)
 		overMaxCounts[aggregationKey] = 1
 	}
-	wantTopCounts := make([]kueuealpha.PreemptionLimitCount, 0, preemptionLimitCountMaxItems)
-	wantTopCounts = append(wantTopCounts, kueuealpha.PreemptionLimitCount{Name: "high", Value: 2})
-	for i := range preemptionLimitCountMaxItems - 1 {
-		wantTopCounts = append(wantTopCounts, kueuealpha.PreemptionLimitCount{
-			Name:  fmt.Sprintf("cq-%04d", i),
+	wantTopCounts := make([]kueuealpha.PreemptionLimitTopAggregatedCount, 0, preemptionLimitTopAggregatedCountsMaxItems)
+	wantTopCounts = append(wantTopCounts, kueuealpha.PreemptionLimitTopAggregatedCount{Key: "high", Value: 2})
+	for i := range preemptionLimitTopAggregatedCountsMaxItems - 1 {
+		wantTopCounts = append(wantTopCounts, kueuealpha.PreemptionLimitTopAggregatedCount{
+			Key:   fmt.Sprintf("cq-%04d", i),
 			Value: 1,
 		})
 	}
@@ -122,10 +122,12 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
 			wantCounts: policy.PreemptionLimitAggregationCounts{"cq-a": 1, "cq-b": 1},
 			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
-				LastUpdateTime: lastUpdateTime,
-				Counts: []kueuealpha.PreemptionLimitCount{
-					{Name: "cq-a", Value: 1},
-					{Name: "cq-b", Value: 1},
+				Window: &kueuealpha.PreemptionLimitWindowStatus{
+					LastUpdateTime: lastUpdateTime,
+					TopAggregatedCounts: []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: "cq-a", Value: 1},
+						{Key: "cq-b", Value: 1},
+					},
 				},
 			},
 			wantRequeuedClusterQueues: new(sets.New[kueue.ClusterQueueReference]()),
@@ -136,10 +138,12 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
 			wantCounts: policy.PreemptionLimitAggregationCounts{"cq-a": 2, "cq-b": 1},
 			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
-				LastUpdateTime: lastUpdateTime,
-				Counts: []kueuealpha.PreemptionLimitCount{
-					{Name: "cq-a", Value: 2},
-					{Name: "cq-b", Value: 1},
+				Window: &kueuealpha.PreemptionLimitWindowStatus{
+					LastUpdateTime: lastUpdateTime,
+					TopAggregatedCounts: []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: "cq-a", Value: 2},
+						{Key: "cq-b", Value: 1},
+					},
 				},
 			},
 			wantRequeuedClusterQueues: &allClusterQueues,
@@ -150,10 +154,12 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
 			wantCounts: policy.PreemptionLimitAggregationCounts{"cq-a": 1, "cq-b": 1},
 			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
-				LastUpdateTime: lastUpdateTime,
-				Counts: []kueuealpha.PreemptionLimitCount{
-					{Name: "cq-a", Value: 1},
-					{Name: "cq-b", Value: 1},
+				Window: &kueuealpha.PreemptionLimitWindowStatus{
+					LastUpdateTime: lastUpdateTime,
+					TopAggregatedCounts: []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: "cq-a", Value: 1},
+						{Key: "cq-b", Value: 1},
+					},
 				},
 			},
 			wantRequeuedClusterQueues: new(sets.New[kueue.ClusterQueueReference]()),
@@ -163,7 +169,9 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			recorded:   seeded,
 			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
 			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
-				LastUpdateTime: lastUpdateTime,
+				Window: &kueuealpha.PreemptionLimitWindowStatus{
+					LastUpdateTime: lastUpdateTime,
+				},
 			},
 			wantRequeuedClusterQueues: &allClusterQueues,
 		},
@@ -175,7 +183,9 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			recorded:   seeded,
 			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
 			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
-				LastUpdateTime: lastUpdateTime,
+				Window: &kueuealpha.PreemptionLimitWindowStatus{
+					LastUpdateTime: lastUpdateTime,
+				},
 			},
 			wantRequeuedClusterQueues: &allClusterQueues,
 		},
@@ -184,33 +194,39 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			recorded:   recorded{now.Add(-time.Hour): limitConsumed("cq-a")},
 			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
 			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
-				LastUpdateTime: lastUpdateTime,
+				Window: &kueuealpha.PreemptionLimitWindowStatus{
+					LastUpdateTime: lastUpdateTime,
+				},
 			},
 			wantRequeuedClusterQueues: new(sets.New[kueue.ClusterQueueReference]()),
 		},
-		"status counts are sorted by value descending and then by name ascending": {
+		"status counts are sorted by value descending and then by key ascending": {
 			limit:      limit,
 			recorded:   multiplePreemptions,
 			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
 			wantCounts: policy.PreemptionLimitAggregationCounts{"cq-a": 2, "cq-b": 1, "cq-c": 3, "cq-d": 2},
 			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
-				LastUpdateTime: lastUpdateTime,
-				Counts: []kueuealpha.PreemptionLimitCount{
-					{Name: "cq-c", Value: 3},
-					{Name: "cq-a", Value: 2},
-					{Name: "cq-d", Value: 2},
-					{Name: "cq-b", Value: 1},
+				Window: &kueuealpha.PreemptionLimitWindowStatus{
+					LastUpdateTime: lastUpdateTime,
+					TopAggregatedCounts: []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: "cq-c", Value: 3},
+						{Key: "cq-a", Value: 2},
+						{Key: "cq-d", Value: 2},
+						{Key: "cq-b", Value: 1},
+					},
 				},
 			},
 		},
-		"status counts exceeding max items are truncated to top 1000 after sorting": {
+		"status counts exceeding max items are truncated to top 100 after sorting": {
 			limit:      limit,
 			recorded:   overMaxPreemptions,
 			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
 			wantCounts: overMaxCounts,
 			wantLimitStatus: &kueuealpha.PreemptionLimitStatus{
-				LastUpdateTime: lastUpdateTime,
-				Counts:         wantTopCounts,
+				Window: &kueuealpha.PreemptionLimitWindowStatus{
+					LastUpdateTime:      lastUpdateTime,
+					TopAggregatedCounts: wantTopCounts,
+				},
 			},
 		},
 		"deleted limit is forgotten": {
