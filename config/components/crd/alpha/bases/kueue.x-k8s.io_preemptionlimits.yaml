@@ -209,22 +209,6 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
-              ruleNames:
-                description: |-
-                  ruleNames restricts the limit to specific rule names within matching PreemptionConfigs.
-                  Preemption rules are evaluated based on trigger type (Always, InsufficientQuota,
-                  QuotaFeasibleAndInsufficientTopology) and in spec.rules order per trigger.
-                  When limits are enabled and a candidate matches multiple rules, the first rule in
-                  order that satisfies the limits is used.
-                  If not set, it applies to all rules.
-                items:
-                  maxLength: 63
-                  minLength: 1
-                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
-                  type: string
-                maxItems: 64
-                type: array
-                x-kubernetes-list-type: set
             required:
             - aggregation
             - configSelector

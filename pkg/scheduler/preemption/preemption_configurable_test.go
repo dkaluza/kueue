@@ -941,8 +941,8 @@ func TestConfigurablePreemptions(t *testing.T) {
 			},
 			wantConfigurableReasonsData: map[workload.Reference]*policy.ConfigurablePreemptionReasonData{
 				"/a1": {
-					ConfigName:  policy.PreemptionConfigReference(defaultConfigName),
-					MatchedRule: policy.MatchedRule{RuleReference: "test-rule-one", SelectorIndexes: []int{0}},
+					ConfigName:                policy.PreemptionConfigReference(defaultConfigName),
+					RuleNameToSelectorIndexes: map[policy.PreemptionConfigRuleReference][]int{"test-rule-one": {0}},
 				},
 			},
 		},
