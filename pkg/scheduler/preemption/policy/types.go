@@ -43,7 +43,9 @@ type Target struct {
 }
 
 type ConfigurablePreemptionReasonData struct {
-	ConfigName                PreemptionConfigReference
+	ConfigName PreemptionConfigReference
+	// RuleNameToSelectorIndexes maps rule names to the indexes of selectors
+	// that the workload satisfies.
 	RuleNameToSelectorIndexes map[PreemptionConfigRuleReference][]int
 	// ConsumedLimits are the PreemptionLimits consumed by preempting this target.
 	ConsumedLimits ConsumedLimits

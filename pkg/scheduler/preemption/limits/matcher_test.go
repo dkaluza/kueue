@@ -139,7 +139,7 @@ func TestPreemptionLimitMatcherMatchesClusterQueues(t *testing.T) {
 				t.Fatalf("newPreemptionLimitMatcher() unexpected error: %v", err)
 			}
 			if got := matcher.matchesClusterQueues(preemptorCQ, targetCQ); got != tc.want {
-				t.Errorf("matches() = %v, want %v", got, tc.want)
+				t.Errorf("matchesClusterQueues() = %v, want %v", got, tc.want)
 			}
 		})
 	}

@@ -100,7 +100,7 @@ func trackedCopy(limit *kueuealpha.PreemptionLimit) *kueuealpha.PreemptionLimit 
 }
 
 // isCompatibleWith reports whether the tracked state can continue to be used
-// for limit, i.e. whether limit has the same UID, scope, and selectors that
+// for limit, i.e. whether limit has the same UID, aggregation, and selectors that
 // this state was initialized with.
 func (ls limitState) isCompatibleWith(limit *kueuealpha.PreemptionLimit) bool {
 	return ls.limit.UID == limit.UID &&
