@@ -133,10 +133,10 @@ spec:
                   format: int32
                   minimum: 1
                   type: integer
-                preemptedClusterQueueSelector:
+                preempteeClusterQueueSelector:
                   description: |-
-                    preemptedClusterQueueSelector selects ClusterQueues of preempted workloads to which this limit applies.
-                    If not set, this limit applies to preempted workloads from all ClusterQueues.
+                    preempteeClusterQueueSelector selects ClusterQueues of preemptee workloads to which this limit applies.
+                    If not set, this limit applies to preemptee workloads from all ClusterQueues.
                   properties:
                     matchExpressions:
                       description: matchExpressions is a list of label selector requirements. The requirements are ANDed.

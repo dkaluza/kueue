@@ -341,7 +341,7 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 	allSelectors := limitBase.Clone().
 		ConfigSelector(*selector("tier", "gold")).
 		PreemptorClusterQueueSelector(selector("side", "preemptor")).
-		PreemptedClusterQueueSelector(selector("side", "preempted")).
+		PreempteeClusterQueueSelector(selector("side", "preemptee")).
 		Obj()
 	limitAndWindowIncreased := limitBase.Clone().Generation(2).Limit(10).LimitWindowSeconds(2 * windowSeconds).Obj()
 	windowHalved := limitBase.Clone().Generation(2).LimitWindowSeconds(windowSeconds / 2).Obj()
@@ -441,8 +441,8 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).PreemptorClusterQueueSelector(selector("side", "other")).Obj(), nil)),
 			wantResult:    true,
 		},
-		"preempted ClusterQueue selector change resets the events": {
-			initialLimits: tracked(trackedLimit(limitBase.Clone().PreemptedClusterQueueSelector(selector("side", "preempted")).Obj(), AggregationEvents{"cq-a": {now}})),
+		"preemptee ClusterQueue selector change resets the events": {
+			initialLimits: tracked(trackedLimit(limitBase.Clone().PreempteeClusterQueueSelector(selector("side", "preemptee")).Obj(), AggregationEvents{"cq-a": {now}})),
 			synced:        limitBase.Clone().Generation(2).Obj(),
 			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).Obj(), nil)),
 			wantResult:    true,

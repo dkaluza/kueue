@@ -106,7 +106,7 @@ func TestPreemptionLimiterConsumedLimits(t *testing.T) {
 				*globalLimit,
 				*preempteeWorkloadLimit,
 				*utiltestingalpha.MakePreemptionLimit("other-cqs", kueuealpha.ByPreempteeCQLimitAggregation).LimitWindowSeconds(60).
-					PreemptedClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"side": "other"}}).Obj(),
+					PreempteeClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"side": "other"}}).Obj(),
 			},
 			want: policy.ConsumedLimits{
 				"global":             policy.NewConsumedLimit(globalLimit, policy.GlobalAggregationKey),

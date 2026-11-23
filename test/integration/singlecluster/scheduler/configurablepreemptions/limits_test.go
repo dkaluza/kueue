@@ -550,7 +550,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 				behavioral.CreateLocalQueuesAndWaitForActive(ctx, k8sClient, lqCritical, lqStandard, lqOwner)
 
 				limit = kueuetestalpha1.MakePreemptionLimit("protect-mission-critical-cq", kueuealpha.ByPreempteeCQLimitAggregation).
-					PreemptedClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"tier": "mission-critical"}}).
+					PreempteeClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"tier": "mission-critical"}}).
 					Limit(0).
 					LimitWindowSeconds(limitWindowSeconds).
 					Obj()

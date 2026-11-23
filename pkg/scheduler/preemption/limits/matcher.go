@@ -33,7 +33,7 @@ import (
 type preemptionLimitMatcher struct {
 	limit                         *kueuealpha.PreemptionLimit
 	preemptorClusterQueueSelector labels.Selector
-	preemptedClusterQueueSelector labels.Selector
+	preempteeClusterQueueSelector labels.Selector
 }
 
 // selectorError reports an invalid selector on a PreemptionLimit.
@@ -65,14 +65,14 @@ func newPreemptionLimitMatcher(limit *kueuealpha.PreemptionLimit, config *kueuea
 	if err != nil {
 		return nil, &selectorError{PreemptionLimit: limit.Name, Selector: "preemptorClusterQueueSelector", Err: err}
 	}
-	preemptedClusterQueueSelector, err := selectorOrEverything(limit.Spec.PreemptedClusterQueueSelector)
+	preempteeClusterQueueSelector, err := selectorOrEverything(limit.Spec.PreempteeClusterQueueSelector)
 	if err != nil {
-		return nil, &selectorError{PreemptionLimit: limit.Name, Selector: "preemptedClusterQueueSelector", Err: err}
+		return nil, &selectorError{PreemptionLimit: limit.Name, Selector: "preempteeClusterQueueSelector", Err: err}
 	}
 	return &preemptionLimitMatcher{
 		limit:                         limit,
 		preemptorClusterQueueSelector: preemptorClusterQueueSelector,
-		preemptedClusterQueueSelector: preemptedClusterQueueSelector,
+		preempteeClusterQueueSelector: preempteeClusterQueueSelector,
 	}, nil
 }
 
@@ -88,7 +88,7 @@ func selectorOrEverything(ls *metav1.LabelSelector) (labels.Selector, error) {
 // preemptorCQ and targetCQ.
 func (m *preemptionLimitMatcher) matchesClusterQueues(preemptorCQ, targetCQ *schdcache.ClusterQueueSnapshot) bool {
 	return m.preemptorClusterQueueSelector.Matches(labels.Set(preemptorCQ.Labels)) &&
-		m.preemptedClusterQueueSelector.Matches(labels.Set(targetCQ.Labels))
+		m.preempteeClusterQueueSelector.Matches(labels.Set(targetCQ.Labels))
 }
 
 // aggregationKey returns the aggregation key that preempting target for preemptor counts against.

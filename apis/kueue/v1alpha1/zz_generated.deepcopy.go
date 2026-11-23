@@ -728,8 +728,8 @@ func (in *PreemptionLimitSpec) DeepCopyInto(out *PreemptionLimitSpec) {
 		*out = new(v1.LabelSelector)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.PreemptedClusterQueueSelector != nil {
-		in, out := &in.PreemptedClusterQueueSelector, &out.PreemptedClusterQueueSelector
+	if in.PreempteeClusterQueueSelector != nil {
+		in, out := &in.PreempteeClusterQueueSelector, &out.PreempteeClusterQueueSelector
 		*out = new(v1.LabelSelector)
 		(*in).DeepCopyInto(*out)
 	}

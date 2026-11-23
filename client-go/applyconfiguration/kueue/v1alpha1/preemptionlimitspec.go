@@ -39,10 +39,10 @@ type PreemptionLimitSpecApplyConfiguration struct {
 	// If not set, this limit applies to preempting workloads from all ClusterQueues.
 	//
 	PreemptorClusterQueueSelector *v1.LabelSelectorApplyConfiguration `json:"preemptorClusterQueueSelector,omitempty"`
-	// preemptedClusterQueueSelector selects ClusterQueues of preempted workloads to which this limit applies.
-	// If not set, this limit applies to preempted workloads from all ClusterQueues.
+	// preempteeClusterQueueSelector selects ClusterQueues of preemptee workloads to which this limit applies.
+	// If not set, this limit applies to preemptee workloads from all ClusterQueues.
 	//
-	PreemptedClusterQueueSelector *v1.LabelSelectorApplyConfiguration `json:"preemptedClusterQueueSelector,omitempty"`
+	PreempteeClusterQueueSelector *v1.LabelSelectorApplyConfiguration `json:"preempteeClusterQueueSelector,omitempty"`
 	// limit defines how many preemption events can occur within the given time window.
 	// An event is defined as a confirmed (preemptor, preemptee) eviction pair.
 	// Setting limit to 0 blocks all matching preemptions under this limit.
@@ -84,11 +84,11 @@ func (b *PreemptionLimitSpecApplyConfiguration) WithPreemptorClusterQueueSelecto
 	return b
 }
 
-// WithPreemptedClusterQueueSelector sets the PreemptedClusterQueueSelector field in the declarative configuration to the given value
+// WithPreempteeClusterQueueSelector sets the PreempteeClusterQueueSelector field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the PreemptedClusterQueueSelector field is set to the value of the last call.
-func (b *PreemptionLimitSpecApplyConfiguration) WithPreemptedClusterQueueSelector(value *v1.LabelSelectorApplyConfiguration) *PreemptionLimitSpecApplyConfiguration {
-	b.PreemptedClusterQueueSelector = value
+// If called multiple times, the PreempteeClusterQueueSelector field is set to the value of the last call.
+func (b *PreemptionLimitSpecApplyConfiguration) WithPreempteeClusterQueueSelector(value *v1.LabelSelectorApplyConfiguration) *PreemptionLimitSpecApplyConfiguration {
+	b.PreempteeClusterQueueSelector = value
 	return b
 }
 

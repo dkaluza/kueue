@@ -1243,7 +1243,7 @@ func TestPreemptionEvaluatorRetryAt(t *testing.T) {
 	}
 	zeroBLimit := utiltestingalpha.MakePreemptionLimit("zero-b", kueuealpha.ByPreempteeCQLimitAggregation).
 		Limit(0).LimitWindowSeconds(windowSeconds).
-		PreemptedClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"cq": "b"}}).Obj()
+		PreempteeClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"cq": "b"}}).Obj()
 
 	type recordedEvent struct {
 		ts       time.Time
