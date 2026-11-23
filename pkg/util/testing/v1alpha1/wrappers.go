@@ -430,9 +430,9 @@ func (pl *PreemptionLimitWrapper) Limit(limit int32) *PreemptionLimitWrapper {
 	return pl
 }
 
-// LimitWindowSeconds sets the sliding window duration, in seconds.
-func (pl *PreemptionLimitWrapper) LimitWindowSeconds(seconds int32) *PreemptionLimitWrapper {
-	pl.Spec.LimitWindowSeconds = seconds
+// WindowSeconds sets the sliding window duration, in seconds.
+func (pl *PreemptionLimitWrapper) WindowSeconds(seconds int32) *PreemptionLimitWrapper {
+	pl.Spec.WindowSeconds = seconds
 	return pl
 }
 

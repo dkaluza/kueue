@@ -126,13 +126,6 @@ spec:
                   format: int32
                   minimum: 0
                   type: integer
-                limitWindowSeconds:
-                  description: |-
-                    limitWindowSeconds specifies the sliding time window duration, in seconds.
-                    Must be greater than or equal to 1 to prevent sub-second thrashing.
-                  format: int32
-                  minimum: 1
-                  type: integer
                 preempteeClusterQueueSelector:
                   description: |-
                     preempteeClusterQueueSelector selects ClusterQueues of preemptee workloads to which this limit applies.
@@ -241,11 +234,19 @@ spec:
                   maxItems: 64
                   type: array
                   x-kubernetes-list-type: set
+                windowSeconds:
+                  description: |-
+                    windowSeconds specifies the sliding time window duration, in seconds.
+                    Must be between 1 (to prevent sub-second thrashing) and 604800 (7 days), inclusive.
+                  format: int32
+                  maximum: 604800
+                  minimum: 1
+                  type: integer
               required:
                 - aggregation
                 - configSelector
                 - limit
-                - limitWindowSeconds
+                - windowSeconds
               type: object
             status:
               description: status defines the observed state of the PreemptionLimit.

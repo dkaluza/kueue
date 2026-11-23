@@ -178,7 +178,7 @@ func TestGetAssignmentsRetryAt(t *testing.T) {
 		).
 		Obj()
 	preemptionLimit := utiltestingalpha.MakePreemptionLimit("per-workload", kueuealpha.ByPreempteeWorkloadLimitAggregation).
-		Limit(1).LimitWindowSeconds(60).Obj()
+		Limit(1).WindowSeconds(60).Obj()
 	victim := utiltestingapi.MakeWorkload("v-od", "default").
 		Queue("limits-lq").
 		Request(corev1.ResourceCPU, "1").
@@ -290,7 +290,7 @@ func TestSchedulePreemptionRetry(t *testing.T) {
 		).
 		Obj()
 	perWorkloadLimit := utiltestingalpha.MakePreemptionLimit("per-workload", kueuealpha.ByPreempteeWorkloadLimitAggregation).
-		Limit(1).LimitWindowSeconds(60).Obj()
+		Limit(1).WindowSeconds(60).Obj()
 	perWorkloadConsumed := func(wl policy.PreemptionLimitAggregationKey) policy.ConsumedLimits {
 		return policy.ConsumedLimits{
 			"per-workload": policy.NewConsumedLimit(perWorkloadLimit, wl),

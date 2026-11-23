@@ -1024,19 +1024,19 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 		).Obj()
 	unitWl := *utiltestingapi.MakeWorkload("unit", "").Request(corev1.ResourceCPU, "1")
 	globalLimit := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalLimitAggregation).
-		LimitWindowSeconds(windowSeconds)
+		WindowSeconds(windowSeconds)
 	perPreempteeCQLimit := utiltestingalpha.MakePreemptionLimit("per-preemptee-cq", kueuealpha.ByPreempteeCQLimitAggregation).
-		LimitWindowSeconds(windowSeconds)
+		WindowSeconds(windowSeconds)
 	lowTierRuleLimit10 := utiltestingalpha.MakePreemptionLimit("low-tier-limit", kueuealpha.GlobalLimitAggregation).
-		LimitWindowSeconds(windowSeconds).RuleNames("low-tier-rule").Limit(10).Obj()
+		WindowSeconds(windowSeconds).RuleNames("low-tier-rule").Limit(10).Obj()
 	lowTierRuleLimit1 := utiltestingalpha.MakePreemptionLimit("low-tier-limit", kueuealpha.GlobalLimitAggregation).
-		LimitWindowSeconds(windowSeconds).RuleNames("low-tier-rule").Limit(1).Obj()
+		WindowSeconds(windowSeconds).RuleNames("low-tier-rule").Limit(1).Obj()
 	anyCQRuleLimit10 := utiltestingalpha.MakePreemptionLimit("any-cq-limit", kueuealpha.GlobalLimitAggregation).
-		LimitWindowSeconds(windowSeconds).RuleNames("any-cluster-queue-rule").Limit(10).Obj()
+		WindowSeconds(windowSeconds).RuleNames("any-cluster-queue-rule").Limit(10).Obj()
 	firstRuleLimit := utiltestingalpha.MakePreemptionLimit("first-rule-limit", kueuealpha.GlobalLimitAggregation).
-		LimitWindowSeconds(windowSeconds).RuleNames("any-cluster-queue-rule").Limit(1).Obj()
+		WindowSeconds(windowSeconds).RuleNames("any-cluster-queue-rule").Limit(1).Obj()
 	secondRuleLimit := utiltestingalpha.MakePreemptionLimit("second-rule-limit", kueuealpha.GlobalLimitAggregation).
-		LimitWindowSeconds(windowSeconds).RuleNames("second-any-cluster-queue-rule").Limit(1).Obj()
+		WindowSeconds(windowSeconds).RuleNames("second-any-cluster-queue-rule").Limit(1).Obj()
 	globalConsumed := policy.NewConsumedLimit(globalLimit.Obj(), policy.GlobalAggregationKey)
 	perPreempteeCQConsumed := func(cq policy.PreemptionLimitAggregationKey) policy.ConsumedLimit {
 		return policy.NewConsumedLimit(perPreempteeCQLimit.Obj(), cq)
@@ -1088,7 +1088,7 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 		},
 		"limits not selecting the PreemptionConfig are neither enforced nor attached": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{
-				*utiltestingalpha.MakePreemptionLimit("other-configs", kueuealpha.GlobalLimitAggregation).LimitWindowSeconds(windowSeconds).
+				*utiltestingalpha.MakePreemptionLimit("other-configs", kueuealpha.GlobalLimitAggregation).WindowSeconds(windowSeconds).
 					ConfigSelector(metav1.LabelSelector{MatchLabels: map[string]string{"tier": "other"}}).Obj(),
 			},
 			admitted: []kueue.Workload{
@@ -1103,7 +1103,7 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 				*lowTierRuleLimit10,
 				*anyCQRuleLimit10,
 				*utiltestingalpha.MakePreemptionLimit("other-rule-limit", kueuealpha.GlobalLimitAggregation).
-					LimitWindowSeconds(windowSeconds).RuleNames("other-rule").Limit(0).Obj(),
+					WindowSeconds(windowSeconds).RuleNames("other-rule").Limit(0).Obj(),
 			},
 			admitted: []kueue.Workload{
 				*unitWl.Clone().Name("a1").Label("tier", "low").SimpleReserveQuota("a", "default", now).Obj(),
@@ -1189,7 +1189,7 @@ func TestNewEvaluatorForPreemptionConfigPreemptionLimits(t *testing.T) {
 		},
 		"no candidates are yielded when a PreemptionLimit has an invalid selector": {
 			preemptionLimits: []kueuealpha.PreemptionLimit{
-				*utiltestingalpha.MakePreemptionLimit("invalid", kueuealpha.GlobalLimitAggregation).Limit(10).LimitWindowSeconds(windowSeconds).
+				*utiltestingalpha.MakePreemptionLimit("invalid", kueuealpha.GlobalLimitAggregation).Limit(10).WindowSeconds(windowSeconds).
 					PreemptorClusterQueueSelector(&metav1.LabelSelector{
 						MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "tier", Operator: "invalid"}},
 					}).Obj(),
@@ -1316,17 +1316,17 @@ func TestPreemptionEvaluatorRetryAt(t *testing.T) {
 		).Obj()
 	unitWl := *utiltestingapi.MakeWorkload("unit", "").Request(corev1.ResourceCPU, "1")
 	perPreempteeCQLimit := utiltestingalpha.MakePreemptionLimit("per-preemptee-cq", kueuealpha.ByPreempteeCQLimitAggregation).
-		Limit(1).LimitWindowSeconds(windowSeconds).Obj()
+		Limit(1).WindowSeconds(windowSeconds).Obj()
 	perPreempteeCQConsumed := func(cq policy.PreemptionLimitAggregationKey) policy.ConsumedLimits {
 		return policy.ConsumedLimits{"per-preemptee-cq": policy.NewConsumedLimit(perPreempteeCQLimit, cq)}
 	}
 	zeroBLimit := utiltestingalpha.MakePreemptionLimit("zero-b", kueuealpha.ByPreempteeCQLimitAggregation).
-		Limit(0).LimitWindowSeconds(windowSeconds).
+		Limit(0).WindowSeconds(windowSeconds).
 		PreempteeClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"cq": "b"}}).Obj()
 	lowTierRuleLimit := utiltestingalpha.MakePreemptionLimit("low-tier-rule-limit", kueuealpha.GlobalLimitAggregation).
-		Limit(1).LimitWindowSeconds(windowSeconds).RuleNames("low-tier-rule").Obj()
+		Limit(1).WindowSeconds(windowSeconds).RuleNames("low-tier-rule").Obj()
 	anyTierRuleLimit := utiltestingalpha.MakePreemptionLimit("any-tier-rule-limit", kueuealpha.GlobalLimitAggregation).
-		Limit(1).LimitWindowSeconds(windowSeconds).RuleNames("any-tier-rule").Obj()
+		Limit(1).WindowSeconds(windowSeconds).RuleNames("any-tier-rule").Obj()
 
 	type recordedEvent struct {
 		ts       time.Time

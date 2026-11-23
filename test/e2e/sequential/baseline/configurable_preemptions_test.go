@@ -172,7 +172,7 @@ var _ = ginkgo.Describe("Configurable Preemption", ginkgo.Label("feature:configu
 		ginkgo.BeforeEach(func() {
 			preemptionLimit = utiltestingalpha.MakePreemptionLimit("limit-"+ns.Name, kueuealpha.GlobalLimitAggregation).
 				Limit(1).
-				LimitWindowSeconds(300).
+				WindowSeconds(300).
 				Obj()
 			behavioral.MustCreate(ctx, k8sClient, preemptionLimit)
 

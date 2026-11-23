@@ -49,9 +49,9 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 	lastUpdateTime := metav1.NewTime(now)
 	errTest := errors.New("test error")
 	allClusterQueues := sets.New[kueue.ClusterQueueReference]("cq-a", "cq-b", "cq-c", "cq-d")
-	limitBase := utiltestingalpha.MakePreemptionLimit("limit", kueuealpha.ByPreemptorCQLimitAggregation).Generation(1).Limit(10).LimitWindowSeconds(60)
+	limitBase := utiltestingalpha.MakePreemptionLimit("limit", kueuealpha.ByPreemptorCQLimitAggregation).Generation(1).Limit(10).WindowSeconds(60)
 	limit := limitBase.Clone().Obj()
-	otherLimit := utiltestingalpha.MakePreemptionLimit("other-limit", kueuealpha.GlobalLimitAggregation).Generation(1).LimitWindowSeconds(60).Obj()
+	otherLimit := utiltestingalpha.MakePreemptionLimit("other-limit", kueuealpha.GlobalLimitAggregation).Generation(1).WindowSeconds(60).Obj()
 	// recorded holds the preemptions of "limit" recorded before it is
 	// reconciled, by timestamp.
 	type recorded map[time.Time]policy.ConsumedLimits
@@ -133,7 +133,7 @@ func TestPreemptionLimitReconcile(t *testing.T) {
 			wantRequeuedClusterQueues: new(sets.New[kueue.ClusterQueueReference]()),
 		},
 		"limit and window increase keep the events": {
-			limit:      limitBase.Clone().Generation(2).Limit(20).LimitWindowSeconds(2 * 3600).Obj(),
+			limit:      limitBase.Clone().Generation(2).Limit(20).WindowSeconds(2 * 3600).Obj(),
 			recorded:   seeded,
 			wantResult: reconcile.Result{RequeueAfter: preemptionLimitPruneInterval},
 			wantCounts: policy.PreemptionLimitAggregationCounts{"cq-a": 2, "cq-b": 1},

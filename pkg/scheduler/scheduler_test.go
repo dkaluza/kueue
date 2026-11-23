@@ -2348,11 +2348,11 @@ func TestSchedule(t *testing.T) {
 				utiltestingalpha.MakePreemptionConfig("limited-config").
 					Rule("within-cq", kueuealpha.Always, kueuealpha.PreemptionConfigPreemptionCandidateSelector{Scope: kueuealpha.WithinClusterQueue}).
 					Obj(),
-				utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalLimitAggregation).Limit(1).LimitWindowSeconds(60).Obj(),
+				utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalLimitAggregation).Limit(1).WindowSeconds(60).Obj(),
 				utiltestingalpha.MakePreemptionLimit("blocked", kueuealpha.GlobalLimitAggregation).
 					PreemptorClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"preemption": "blocked"}}).
 					Limit(0).
-					LimitWindowSeconds(60).
+					WindowSeconds(60).
 					Obj(),
 			},
 			workloads: []kueue.Workload{

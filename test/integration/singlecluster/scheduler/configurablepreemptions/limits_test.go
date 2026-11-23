@@ -166,7 +166,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 
 			limit = kueuetestalpha1.MakePreemptionLimit("ignored-zero-limit", kueuealpha.GlobalLimitAggregation).
 				Limit(0).
-				LimitWindowSeconds(limitWindowSeconds).
+				WindowSeconds(limitWindowSeconds).
 				Obj()
 			behavioral.MustCreate(ctx, k8sClient, limit)
 		})
@@ -245,7 +245,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 				limit = kueuetestalpha1.MakePreemptionLimit("canary-rollout-limit", kueuealpha.GlobalLimitAggregation).
 					ConfigSelector(metav1.LabelSelector{MatchLabels: map[string]string{"rollout": "canary"}}).
 					Limit(0).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})
@@ -341,7 +341,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 
 				limit = kueuetestalpha1.MakePreemptionLimit("per-workload-disruption-limit", kueuealpha.ByPreempteeWorkloadLimitAggregation).
 					Limit(1).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})
@@ -440,7 +440,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 
 				limit = kueuetestalpha1.MakePreemptionLimit("global-rate-limit", kueuealpha.GlobalLimitAggregation).
 					Limit(2).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})
@@ -553,7 +553,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 				limit = kueuetestalpha1.MakePreemptionLimit("protect-mission-critical-cq", kueuealpha.ByPreempteeCQLimitAggregation).
 					PreempteeClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"tier": "mission-critical"}}).
 					Limit(0).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})
@@ -642,7 +642,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 				limit = kueuetestalpha1.MakePreemptionLimit("per-tenant-budget", kueuealpha.ByPreemptorCQLimitAggregation).
 					PreemptorClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"role": "tenant"}}).
 					Limit(1).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})
@@ -744,12 +744,12 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 				preempteeCQLimit = kueuetestalpha1.MakePreemptionLimit("status-preemptee-cq-limit", kueuealpha.ByPreempteeCQLimitAggregation).
 					ConfigSelector(prodConfigSelector).
 					Limit(5).
-					LimitWindowSeconds(longLimitWindowSeconds).
+					WindowSeconds(longLimitWindowSeconds).
 					Obj()
 				shortGlobalLimit = kueuetestalpha1.MakePreemptionLimit("status-short-global-limit", kueuealpha.GlobalLimitAggregation).
 					ConfigSelector(prodConfigSelector).
 					Limit(5).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(preempteeCQLimit)
 				createPreemptionLimitAndWaitForSync(shortGlobalLimit)
@@ -841,7 +841,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 
 				limit = kueuetestalpha1.MakePreemptionLimit("reset-delete-limit", kueuealpha.GlobalLimitAggregation).
 					Limit(1).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})

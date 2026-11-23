@@ -52,7 +52,7 @@ var _ = ginkgo.Describe("PreemptionLimit RBAC", ginkgo.Label("area:singlecluster
 			preemptionLimits := adminClient.KueueV1alpha1().PreemptionLimits()
 			preemptionLimit := utiltestingalpha.MakePreemptionLimit("preemptionlimit-rbac-admin", kueuealpha.GlobalLimitAggregation).
 				Limit(1).
-				LimitWindowSeconds(60).
+				WindowSeconds(60).
 				Obj()
 			// Also removed by the last step; this covers a failure before then.
 			ginkgo.DeferCleanup(func() {
@@ -122,7 +122,7 @@ var _ = ginkgo.Describe("PreemptionLimit RBAC", ginkgo.Label("area:singlecluster
 			// The viewer cannot create its own fixture, so the suite's admin client does it.
 			preemptionLimit = utiltestingalpha.MakePreemptionLimit("preemptionlimit-rbac-viewer", kueuealpha.GlobalLimitAggregation).
 				Limit(1).
-				LimitWindowSeconds(60).
+				WindowSeconds(60).
 				Obj()
 			behavioral.MustCreate(ctx, k8sClient, preemptionLimit)
 			ginkgo.DeferCleanup(func() {

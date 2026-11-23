@@ -31,7 +31,7 @@ import (
 func TestPreemptionLimitsSnapshotAllowance(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	perCQLimit := utiltestingalpha.MakePreemptionLimit("per-cq", kueuealpha.ByPreempteeCQLimitAggregation).
-		Limit(3).LimitWindowSeconds(60).Obj()
+		Limit(3).WindowSeconds(60).Obj()
 	perCQRef := policy.PreemptionLimitReference(perCQLimit.Name)
 
 	cases := map[string]struct {
@@ -98,9 +98,9 @@ func TestPreemptionLimitsSnapshotAllowance(t *testing.T) {
 func TestPreemptionLimitsSnapshotRecord(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	globalLimit := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalLimitAggregation).
-		Limit(5).LimitWindowSeconds(60).Obj()
+		Limit(5).WindowSeconds(60).Obj()
 	perCQLimit := utiltestingalpha.MakePreemptionLimit("per-cq", kueuealpha.ByPreempteeCQLimitAggregation).
-		Limit(3).LimitWindowSeconds(60).Obj()
+		Limit(3).WindowSeconds(60).Obj()
 	globalConsumed := policy.NewConsumedLimit(globalLimit, policy.GlobalAggregationKey)
 	perCQConsumed := func(cq policy.PreemptionLimitAggregationKey) policy.ConsumedLimit {
 		return policy.NewConsumedLimit(perCQLimit, cq)
@@ -161,7 +161,7 @@ func TestPreemptionLimitsSnapshotRecord(t *testing.T) {
 func TestPreemptionLimitsSnapshotNextSlotTime(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	global := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalLimitAggregation).
-		LimitWindowSeconds(60)
+		WindowSeconds(60)
 	globalOne := global.Clone().Limit(1).Obj()
 	globalConsumed := policy.ConsumedLimits{"global": policy.NewConsumedLimit(globalOne, policy.GlobalAggregationKey)}
 
@@ -234,11 +234,11 @@ func TestPreemptionLimitsSnapshotNextSlotTime(t *testing.T) {
 func TestPreemptionLimitsSnapshotWithinLimits(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	perCQLimit := utiltestingalpha.MakePreemptionLimit("per-cq", kueuealpha.ByPreempteeCQLimitAggregation).
-		Limit(2).LimitWindowSeconds(60).Obj()
+		Limit(2).WindowSeconds(60).Obj()
 	globalLimit := utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalLimitAggregation).
-		Limit(2).LimitWindowSeconds(60).Obj()
+		Limit(2).WindowSeconds(60).Obj()
 	missingLimit := utiltestingalpha.MakePreemptionLimit("missing", kueuealpha.GlobalLimitAggregation).
-		Limit(2).LimitWindowSeconds(60).Obj()
+		Limit(2).WindowSeconds(60).Obj()
 	globalConsumed := policy.NewConsumedLimit(globalLimit, policy.GlobalAggregationKey)
 	perCQConsumed := func(cq policy.PreemptionLimitAggregationKey) policy.ConsumedLimit {
 		return policy.NewConsumedLimit(perCQLimit, cq)

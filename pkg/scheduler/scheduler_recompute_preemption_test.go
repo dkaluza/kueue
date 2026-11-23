@@ -220,7 +220,7 @@ func TestScheduleRecomputePreemptionTargets(t *testing.T) {
 			).Obj()
 	}
 	perPreemptedCQLimit := utiltestingalpha.MakePreemptionLimit("per-preempted-cq", kueuealpha.ByPreempteeCQLimitAggregation).
-		Limit(1).LimitWindowSeconds(60)
+		Limit(1).WindowSeconds(60)
 	cpuAdmission := func(cq kueue.ClusterQueueReference, flavor kueue.ResourceFlavorReference, cpu string) *kueue.Admission {
 		return utiltestingapi.MakeAdmission(cq).
 			PodSets(utiltestingapi.MakePodSetAssignment(kueue.DefaultPodSetName).
@@ -2431,7 +2431,7 @@ func TestScheduleRecomputePreemptionTargets(t *testing.T) {
 			additionalLocalQueues:   limitsLocalQueues,
 			objects: []client.Object{
 				groupConfig("cfg-one", "one"), groupConfig("cfg-two", "two"),
-				utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalLimitAggregation).Limit(1).LimitWindowSeconds(60).Obj(),
+				utiltestingalpha.MakePreemptionLimit("global", kueuealpha.GlobalLimitAggregation).Limit(1).WindowSeconds(60).Obj(),
 			},
 			workloads: []kueue.Workload{
 				*limitsPreemptor("p1", "lq-p1", now.Add(-2*time.Minute)).Obj(),

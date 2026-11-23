@@ -129,12 +129,13 @@ type PreemptionLimitSpec struct {
 	// +kubebuilder:validation:Minimum=0
 	Limit int32 `json:"limit"`
 
-	// limitWindowSeconds specifies the sliding time window duration, in seconds.
-	// Must be greater than or equal to 1 to prevent sub-second thrashing.
+	// windowSeconds specifies the sliding time window duration, in seconds.
+	// Must be between 1 (to prevent sub-second thrashing) and 604800 (7 days), inclusive.
 	//
 	// +required
 	// +kubebuilder:validation:Minimum=1
-	LimitWindowSeconds int32 `json:"limitWindowSeconds,omitempty"`
+	// +kubebuilder:validation:Maximum=604800
+	WindowSeconds int32 `json:"windowSeconds,omitempty"`
 }
 
 // PreemptionLimitStatus defines the observed state of PreemptionLimit
