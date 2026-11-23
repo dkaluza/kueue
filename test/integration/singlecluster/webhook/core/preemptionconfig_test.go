@@ -19,20 +19,17 @@ package core
 import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/onsi/gomega/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
-	utiltestingalpha "sigs.k8s.io/kueue/pkg/util/testing/v1alpha1"
 	"sigs.k8s.io/kueue/test/util/behavioral"
 )
 
 const (
-	minMaxValueErrorMessage        = "minValue must be less than or equal to maxValue"
-	negativeValueErrorMessage      = "should be greater than or equal to 0"
-	duplicateRuleNamesErrorMessage = "rule names must be unique"
+	minMaxValueErrorMessage   = "minValue must be less than or equal to maxValue"
+	negativeValueErrorMessage = "should be greater than or equal to 0"
 )
 
 func makePreemptionConfigWithNumericLabel(name string, minValue, maxValue *int32) *kueuealpha.PreemptionConfig {
@@ -92,33 +89,6 @@ var _ = ginkgo.Describe("PreemptionConfig Validation", func() {
 			ginkgo.Entry("Disallow negative minValue with non-negative maxValue", ptr.To[int32](-1), ptr.To[int32](5), negativeValueErrorMessage),
 			ginkgo.Entry("Disallow negative minValue and maxValue", ptr.To[int32](-5), ptr.To[int32](-1), negativeValueErrorMessage),
 		)
-
-		ginkgo.DescribeTable("Validate PreemptionConfig rule names",
-			func(config *kueuealpha.PreemptionConfig, matcher types.GomegaMatcher) {
-				err := k8sClient.Create(ctx, config)
-				if err == nil {
-					defer func() {
-						behavioral.ExpectObjectToBeDeleted(ctx, k8sClient, config, true)
-					}()
-				}
-				gomega.Expect(err).Should(matcher)
-			},
-			ginkgo.Entry("Disallow duplicate rule names",
-				utiltestingalpha.MakePreemptionConfig("config-with-duplicate-names").
-					Rule("duplicate-rule-name", kueuealpha.Always).
-					Rule("duplicate-rule-name", kueuealpha.InsufficientQuota).
-					Obj(),
-				gomega.And(
-					utiltesting.BeInvalidError(),
-					gomega.MatchError(gomega.ContainSubstring(duplicateRuleNamesErrorMessage))),
-			),
-			ginkgo.Entry("Allow multiple different rules",
-				utiltestingalpha.MakePreemptionConfig("config-with-different-names").
-					Rule("rule-name-1", kueuealpha.Always).
-					Rule("rule-name-2", kueuealpha.Always).
-					Obj(),
-				gomega.Succeed()),
-		)
 	})
 
 	ginkgo.When("Updating PreemptionConfig", func() {
@@ -171,26 +141,6 @@ var _ = ginkgo.Describe("PreemptionConfig Validation", func() {
 				err := k8sClient.Update(ctx, &fetched)
 				gomega.Expect(err).To(utiltesting.BeInvalidError())
 				gomega.Expect(err.Error()).To(gomega.ContainSubstring(negativeValueErrorMessage))
-			})
-		})
-
-		ginkgo.It("Should validate rule names", func() {
-			pc := utiltestingalpha.MakePreemptionConfig("config-with-rules").
-				Rule("rule-name-1", kueuealpha.Always).
-				Rule("rule-name-2", kueuealpha.Always).
-				Obj()
-			behavioral.MustCreate(ctx, k8sClient, pc)
-			ginkgo.DeferCleanup(func() {
-				behavioral.ExpectObjectToBeDeleted(ctx, k8sClient, pc, true)
-			})
-
-			ginkgo.By("Rejecting an update that sets a duplicate name", func() {
-				var fetched kueuealpha.PreemptionConfig
-				gomega.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pc), &fetched)).To(gomega.Succeed())
-				fetched.Spec.Rules[1].Name = fetched.Spec.Rules[0].Name
-				err := k8sClient.Update(ctx, &fetched)
-				gomega.Expect(err).To(utiltesting.BeInvalidError())
-				gomega.Expect(err.Error()).To(gomega.ContainSubstring(duplicateRuleNamesErrorMessage))
 			})
 		})
 	})

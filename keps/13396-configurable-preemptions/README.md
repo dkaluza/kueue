@@ -575,12 +575,12 @@ type PreemptionConfig struct {
 }
 
 type PreemptionConfigSpec struct {
-  // rules specifies preemption candidate selection rules. Each rule must have a unique name.
-	//
-	// +optional
-	// +listType=atomic
-	// +kubebuilder:validation:MaxItems=64
-	// +kubebuilder:validation:XValidation:rule="self.all(x, self.exists_one(y, x.name == y.name))",message="rule names must be unique"
+  // Rules to select preemption candidates.
+  //
+  // +optional
+  // +listType=map
+  // +listMapKey=name
+  // +kubebuilder:validation:MaxItems=64
   Rules []PreemptionConfigPreemptionRule `json:"rules,omitempty"`
 }
 
