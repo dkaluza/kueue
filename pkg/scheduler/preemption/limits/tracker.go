@@ -112,7 +112,7 @@ func (ls limitState) isCompatibleWith(limit *kueuealpha.PreemptionLimit) bool {
 
 func (ls limitState) isLimitRelaxed(limit *kueuealpha.PreemptionLimit) bool {
 	return limit.Spec.Limit > ls.limit.Spec.Limit ||
-		limit.Spec.LimitWindowSeconds < ls.limit.Spec.LimitWindowSeconds
+		limit.Spec.WindowSeconds < ls.limit.Spec.WindowSeconds
 }
 
 // counts returns the number of events within the window (windowStart, now] of
@@ -162,7 +162,7 @@ func (t *PreemptionLimitTracker) Record(ts time.Time, consumedLimits policy.Cons
 
 // windowStart returns the exclusive start of the window of limit ending at now.
 func windowStart(now time.Time, limit *kueuealpha.PreemptionLimit) time.Time {
-	return now.Add(-time.Duration(limit.Spec.LimitWindowSeconds) * time.Second)
+	return now.Add(-time.Duration(limit.Spec.WindowSeconds) * time.Second)
 }
 
 // Snapshot returns a point-in-time snapshot of the tracked PreemptionLimits

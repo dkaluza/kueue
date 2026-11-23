@@ -18,40 +18,40 @@ limitations under the License.
 
 package v1alpha1
 
-// PreemptionLimitCountApplyConfiguration represents a declarative configuration of the PreemptionLimitCount type for use
+// PreemptionLimitTopAggregatedCountApplyConfiguration represents a declarative configuration of the PreemptionLimitTopAggregatedCount type for use
 // with apply.
 //
-// PreemptionLimitCount tracks the number of preemptions for a single aggregation unit.
-type PreemptionLimitCountApplyConfiguration struct {
-	// name identifies the aggregation unit.
+// PreemptionLimitTopAggregatedCount tracks the number of preemptions issued for one of the top aggregation units.
+type PreemptionLimitTopAggregatedCountApplyConfiguration struct {
+	// key identifies the aggregation unit.
 	// For Global aggregation it is "Global".
 	// For ByPreemptorClusterQueue and ByPreempteeClusterQueue aggregations it is the ClusterQueue name.
 	// For ByPreempteeWorkload aggregation it is "<namespace>/<workload-name>".
 	//
-	Name *string `json:"name,omitempty"`
+	Key *string `json:"key,omitempty"`
 	// value is the number of preemptions recorded within the sliding time window.
 	//
 	Value *int32 `json:"value,omitempty"`
 }
 
-// PreemptionLimitCountApplyConfiguration constructs a declarative configuration of the PreemptionLimitCount type for use with
+// PreemptionLimitTopAggregatedCountApplyConfiguration constructs a declarative configuration of the PreemptionLimitTopAggregatedCount type for use with
 // apply.
-func PreemptionLimitCount() *PreemptionLimitCountApplyConfiguration {
-	return &PreemptionLimitCountApplyConfiguration{}
+func PreemptionLimitTopAggregatedCount() *PreemptionLimitTopAggregatedCountApplyConfiguration {
+	return &PreemptionLimitTopAggregatedCountApplyConfiguration{}
 }
 
-// WithName sets the Name field in the declarative configuration to the given value
+// WithKey sets the Key field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Name field is set to the value of the last call.
-func (b *PreemptionLimitCountApplyConfiguration) WithName(value string) *PreemptionLimitCountApplyConfiguration {
-	b.Name = &value
+// If called multiple times, the Key field is set to the value of the last call.
+func (b *PreemptionLimitTopAggregatedCountApplyConfiguration) WithKey(value string) *PreemptionLimitTopAggregatedCountApplyConfiguration {
+	b.Key = &value
 	return b
 }
 
 // WithValue sets the Value field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Value field is set to the value of the last call.
-func (b *PreemptionLimitCountApplyConfiguration) WithValue(value int32) *PreemptionLimitCountApplyConfiguration {
+func (b *PreemptionLimitTopAggregatedCountApplyConfiguration) WithValue(value int32) *PreemptionLimitTopAggregatedCountApplyConfiguration {
 	b.Value = &value
 	return b
 }

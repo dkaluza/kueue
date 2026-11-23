@@ -40,7 +40,7 @@ func TestNewPreemptionLimitMatcher(t *testing.T) {
 	invalidSelector := &metav1.LabelSelector{
 		MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "tier", Operator: "invalid"}},
 	}
-	limit := utiltestingalpha.MakePreemptionLimit("limit", kueuealpha.GlobalLimitAggregation).LimitWindowSeconds(60)
+	limit := utiltestingalpha.MakePreemptionLimit("limit", kueuealpha.GlobalLimitAggregation).WindowSeconds(60)
 
 	cases := map[string]struct {
 		limit       *kueuealpha.PreemptionLimit
@@ -130,7 +130,7 @@ func TestPreemptionLimitMatcherMatchesClusterQueues(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			limit := utiltestingalpha.MakePreemptionLimit("limit", kueuealpha.GlobalLimitAggregation).
-				LimitWindowSeconds(60).
+				WindowSeconds(60).
 				PreemptorClusterQueueSelector(tc.preemptorClusterQueueSelector).
 				PreempteeClusterQueueSelector(tc.preempteeClusterQueueSelector).
 				Obj()
@@ -157,7 +157,7 @@ func TestPreemptionLimitMatcherAggregationKey(t *testing.T) {
 	}
 	for aggregation, want := range cases {
 		t.Run(string(aggregation), func(t *testing.T) {
-			matcher := &preemptionLimitMatcher{limit: utiltestingalpha.MakePreemptionLimit("limit", aggregation).LimitWindowSeconds(60).Obj()}
+			matcher := &preemptionLimitMatcher{limit: utiltestingalpha.MakePreemptionLimit("limit", aggregation).WindowSeconds(60).Obj()}
 			if got := matcher.aggregationKey(preemptor, target); got != want {
 				t.Errorf("aggregationKey() = %q, want %q", got, want)
 			}

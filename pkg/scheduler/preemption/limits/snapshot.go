@@ -117,5 +117,5 @@ func (s *PreemptionLimitsSnapshot) nextSlotTime(limit policy.PreemptionLimitRefe
 	if !found {
 		return nil
 	}
-	return new(earliest.Add(time.Duration(preemptionLimit.Spec.LimitWindowSeconds) * time.Second))
+	return new(earliest.Add(time.Duration(preemptionLimit.Spec.WindowSeconds) * time.Second))
 }

@@ -70,7 +70,8 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 		gomega.Eventually(func(g gomega.Gomega) {
 			var got kueuealpha.PreemptionLimit
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(limit), &got)).To(gomega.Succeed())
-			g.Expect(got.Status.LastUpdateTime).NotTo(gomega.BeNil())
+			g.Expect(got.Status.Window).NotTo(gomega.BeNil())
+			g.Expect(got.Status.Window.LastUpdateTime.IsZero()).To(gomega.BeFalse())
 		}, behavioral.Timeout, behavioral.ShortInterval).Should(gomega.Succeed())
 	}
 
@@ -118,13 +119,14 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 		}, behavioral.ConsistentDuration, behavioral.ShortInterval).Should(gomega.Succeed())
 	}
 
-	expectPreemptionLimitCounts := func(limit *kueuealpha.PreemptionLimit, want []kueuealpha.PreemptionLimitCount) {
+	expectPreemptionLimitCounts := func(limit *kueuealpha.PreemptionLimit, want []kueuealpha.PreemptionLimitTopAggregatedCount) {
 		ginkgo.GinkgoHelper()
 		gomega.Eventually(func(g gomega.Gomega) {
 			var got kueuealpha.PreemptionLimit
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(limit), &got)).To(gomega.Succeed())
-			g.Expect(got.Status.LastUpdateTime).NotTo(gomega.BeNil())
-			g.Expect(got.Status.Counts).To(gomega.BeComparableTo(want, cmpopts.EquateEmpty()))
+			g.Expect(got.Status.Window).NotTo(gomega.BeNil())
+			g.Expect(got.Status.Window.LastUpdateTime.IsZero()).To(gomega.BeFalse())
+			g.Expect(got.Status.Window.TopAggregatedCounts).To(gomega.BeComparableTo(want, cmpopts.EquateEmpty()))
 		}, behavioral.Timeout, behavioral.ShortInterval).Should(gomega.Succeed())
 	}
 
@@ -164,7 +166,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 
 			limit = kueuetestalpha1.MakePreemptionLimit("ignored-zero-limit", kueuealpha.GlobalLimitAggregation).
 				Limit(0).
-				LimitWindowSeconds(limitWindowSeconds).
+				WindowSeconds(limitWindowSeconds).
 				Obj()
 			behavioral.MustCreate(ctx, k8sClient, limit)
 		})
@@ -191,8 +193,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 			gomega.Consistently(func(g gomega.Gomega) {
 				var got kueuealpha.PreemptionLimit
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(limit), &got)).To(gomega.Succeed())
-				g.Expect(got.Status.LastUpdateTime).To(gomega.BeNil())
-				g.Expect(got.Status.Counts).To(gomega.BeEmpty())
+				g.Expect(got.Status.Window).To(gomega.BeNil())
 			}, behavioral.ConsistentDuration, behavioral.ShortInterval).Should(gomega.Succeed())
 		})
 	})
@@ -244,7 +245,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 				limit = kueuetestalpha1.MakePreemptionLimit("canary-rollout-limit", kueuealpha.GlobalLimitAggregation).
 					ConfigSelector(metav1.LabelSelector{MatchLabels: map[string]string{"rollout": "canary"}}).
 					Limit(0).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})
@@ -284,8 +285,8 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 					behavioral.FinishEvictionForWorkloads(ctx, k8sClient, lowWl1)
 					behavioral.ExpectWorkloadsToBeAdmitted(ctx, k8sClient, highWl1)
 					behavioral.ExpectWorkloadsToBePending(ctx, k8sClient, lowWl1)
-					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitCount{
-						{Name: string(policy.GlobalAggregationKey), Value: 1},
+					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: string(policy.GlobalAggregationKey), Value: 1},
 					})
 
 					highWl2 = createWorkload("high-2", lq.Name, 100, "1")
@@ -304,8 +305,8 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 					behavioral.FinishEvictionForWorkloads(ctx, k8sClient, lowWl2)
 					behavioral.ExpectWorkloadsToBeAdmitted(ctx, k8sClient, highWl2)
 					behavioral.ExpectWorkloadsToBePending(ctx, k8sClient, lowWl2)
-					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitCount{
-						{Name: string(policy.GlobalAggregationKey), Value: 2},
+					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: string(policy.GlobalAggregationKey), Value: 2},
 					})
 				})
 			})
@@ -340,7 +341,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 
 				limit = kueuetestalpha1.MakePreemptionLimit("per-workload-disruption-limit", kueuealpha.ByPreempteeWorkloadLimitAggregation).
 					Limit(1).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})
@@ -365,8 +366,8 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 					behavioral.FinishEvictionForWorkloads(ctx, k8sClient, protectedWl)
 					behavioral.ExpectWorkloadsToBeAdmitted(ctx, k8sClient, preemptor1)
 					behavioral.ExpectWorkloadsToBePending(ctx, k8sClient, protectedWl)
-					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitCount{
-						{Name: ns.Name + "/" + protectedWl.Name, Value: 1},
+					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: ns.Name + "/" + protectedWl.Name, Value: 1},
 					})
 				})
 
@@ -383,9 +384,9 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 					behavioral.FinishEvictionForWorkloads(ctx, k8sClient, otherVictimWl)
 					behavioral.ExpectWorkloadsToBeAdmitted(ctx, k8sClient, preemptor2)
 					expectWorkloadsNotEvictedConsistently(protectedWl)
-					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitCount{
-						{Name: ns.Name + "/" + otherVictimWl.Name, Value: 1},
-						{Name: ns.Name + "/" + protectedWl.Name, Value: 1},
+					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: ns.Name + "/" + otherVictimWl.Name, Value: 1},
+						{Key: ns.Name + "/" + protectedWl.Name, Value: 1},
 					})
 				})
 
@@ -439,7 +440,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 
 				limit = kueuetestalpha1.MakePreemptionLimit("global-rate-limit", kueuealpha.GlobalLimitAggregation).
 					Limit(2).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})
@@ -486,8 +487,8 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 						))
 					}, behavioral.Timeout, behavioral.ShortInterval).Should(gomega.Succeed())
 					expectWorkloadsNotEvictedConsistently(lowBeta2)
-					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitCount{
-						{Name: string(policy.GlobalAggregationKey), Value: 2},
+					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: string(policy.GlobalAggregationKey), Value: 2},
 					})
 				})
 
@@ -496,8 +497,8 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 
 					behavioral.FinishEvictionForWorkloads(ctx, k8sClient, lowBeta2)
 					behavioral.ExpectWorkloadsToBeAdmitted(ctx, k8sClient, highBeta2)
-					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitCount{
-						{Name: string(policy.GlobalAggregationKey), Value: 1},
+					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: string(policy.GlobalAggregationKey), Value: 1},
 					})
 				})
 			})
@@ -552,7 +553,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 				limit = kueuetestalpha1.MakePreemptionLimit("protect-mission-critical-cq", kueuealpha.ByPreempteeCQLimitAggregation).
 					PreempteeClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"tier": "mission-critical"}}).
 					Limit(0).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})
@@ -641,7 +642,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 				limit = kueuetestalpha1.MakePreemptionLimit("per-tenant-budget", kueuealpha.ByPreemptorCQLimitAggregation).
 					PreemptorClusterQueueSelector(&metav1.LabelSelector{MatchLabels: map[string]string{"role": "tenant"}}).
 					Limit(1).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})
@@ -673,8 +674,8 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 					tenantAWl2 = createWorkload("tenant-a-2", lqTenantA.Name, 100, "1")
 					behavioral.ExpectWorkloadsToBePending(ctx, k8sClient, tenantAWl2)
 					expectWorkloadsNotEvictedConsistently(oppWl2, oppWl3)
-					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitCount{
-						{Name: cqTenantA.Name, Value: 1},
+					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: cqTenantA.Name, Value: 1},
 					})
 				})
 
@@ -685,9 +686,9 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 
 					behavioral.ExpectWorkloadsToBePending(ctx, k8sClient, tenantAWl2)
 					expectWorkloadsNotEvictedConsistently(oppWl3)
-					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitCount{
-						{Name: cqTenantA.Name, Value: 1},
-						{Name: cqTenantB.Name, Value: 1},
+					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: cqTenantA.Name, Value: 1},
+						{Key: cqTenantB.Name, Value: 1},
 					})
 				})
 			})
@@ -743,12 +744,12 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 				preempteeCQLimit = kueuetestalpha1.MakePreemptionLimit("status-preemptee-cq-limit", kueuealpha.ByPreempteeCQLimitAggregation).
 					ConfigSelector(prodConfigSelector).
 					Limit(5).
-					LimitWindowSeconds(longLimitWindowSeconds).
+					WindowSeconds(longLimitWindowSeconds).
 					Obj()
 				shortGlobalLimit = kueuetestalpha1.MakePreemptionLimit("status-short-global-limit", kueuealpha.GlobalLimitAggregation).
 					ConfigSelector(prodConfigSelector).
 					Limit(5).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(preempteeCQLimit)
 				createPreemptionLimitAndWaitForSync(shortGlobalLimit)
@@ -773,9 +774,9 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 				victimA1 := createWorkload("victim-a-1", lqVictimA.Name, 30, "1")
 				behavioral.ExpectWorkloadsToBeAdmitted(ctx, k8sClient, victimB1, victimB2, victimA1)
 
-				wantCQCounts := []kueuealpha.PreemptionLimitCount{
-					{Name: cqVictimB.Name, Value: 2},
-					{Name: cqVictimA.Name, Value: 1},
+				wantCQCounts := []kueuealpha.PreemptionLimitTopAggregatedCount{
+					{Key: cqVictimB.Name, Value: 2},
+					{Key: cqVictimA.Name, Value: 1},
 				}
 
 				ginkgo.By("Recording preemptions and reporting counts sorted by descending value", func() {
@@ -784,8 +785,8 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 					behavioral.ExpectWorkloadsToBeAdmitted(ctx, k8sClient, preemptor)
 
 					expectPreemptionLimitCounts(preempteeCQLimit, wantCQCounts)
-					expectPreemptionLimitCounts(shortGlobalLimit, []kueuealpha.PreemptionLimitCount{
-						{Name: string(policy.GlobalAggregationKey), Value: 3},
+					expectPreemptionLimitCounts(shortGlobalLimit, []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: string(policy.GlobalAggregationKey), Value: 3},
 					})
 				})
 
@@ -804,7 +805,8 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 					gomega.Consistently(func(g gomega.Gomega) {
 						var got kueuealpha.PreemptionLimit
 						g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preempteeCQLimit), &got)).To(gomega.Succeed())
-						g.Expect(got.Status.Counts).To(gomega.Equal(wantCQCounts))
+						g.Expect(got.Status.Window).NotTo(gomega.BeNil())
+						g.Expect(got.Status.Window.TopAggregatedCounts).To(gomega.Equal(wantCQCounts))
 					}, behavioral.ConsistentDuration, behavioral.ShortInterval).Should(gomega.Succeed())
 				})
 			})
@@ -839,7 +841,7 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 
 				limit = kueuetestalpha1.MakePreemptionLimit("reset-delete-limit", kueuealpha.GlobalLimitAggregation).
 					Limit(1).
-					LimitWindowSeconds(limitWindowSeconds).
+					WindowSeconds(limitWindowSeconds).
 					Obj()
 				createPreemptionLimitAndWaitForSync(limit)
 			})
@@ -863,8 +865,8 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 					highWl1 := createWorkload("high-1", lq.Name, 100, "1")
 					behavioral.FinishEvictionForWorkloads(ctx, k8sClient, lowWl1)
 					behavioral.ExpectWorkloadsToBeAdmitted(ctx, k8sClient, highWl1)
-					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitCount{
-						{Name: string(policy.GlobalAggregationKey), Value: 1},
+					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: string(policy.GlobalAggregationKey), Value: 1},
 					})
 
 					highWl2 = createWorkload("high-2", lq.Name, 100, "1")
@@ -883,8 +885,8 @@ var _ = ginkgo.Describe("PreemptionLimits", ginkgo.Label("feature:configurablepr
 					highWl2 = recreateWorkload(highWl2)
 					behavioral.FinishEvictionForWorkloads(ctx, k8sClient, lowWl2)
 					behavioral.ExpectWorkloadsToBeAdmitted(ctx, k8sClient, highWl2)
-					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitCount{
-						{Name: cq.Name, Value: 1},
+					expectPreemptionLimitCounts(limit, []kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: cq.Name, Value: 1},
 					})
 
 					highWl3 = createWorkload("high-3", lq.Name, 100, "1")

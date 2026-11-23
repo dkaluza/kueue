@@ -18,22 +18,13 @@ limitations under the License.
 
 package v1alpha1
 
-import (
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
 // PreemptionLimitStatusApplyConfiguration represents a declarative configuration of the PreemptionLimitStatus type for use
 // with apply.
 //
 // PreemptionLimitStatus defines the observed state of PreemptionLimit
 type PreemptionLimitStatusApplyConfiguration struct {
-	// lastUpdateTime is the time when the status was last updated.
-	//
-	LastUpdateTime *v1.Time `json:"lastUpdateTime,omitempty"`
-	// counts is periodically updated, for reference only.
-	// Restricted to the top 1000 counts to fit within CRD size limits.
-	//
-	Counts []PreemptionLimitCountApplyConfiguration `json:"counts,omitempty"`
+	// window is the periodically refreshed state of the sliding time window of this limit.
+	Window *PreemptionLimitWindowStatusApplyConfiguration `json:"window,omitempty"`
 }
 
 // PreemptionLimitStatusApplyConfiguration constructs a declarative configuration of the PreemptionLimitStatus type for use with
@@ -42,23 +33,10 @@ func PreemptionLimitStatus() *PreemptionLimitStatusApplyConfiguration {
 	return &PreemptionLimitStatusApplyConfiguration{}
 }
 
-// WithLastUpdateTime sets the LastUpdateTime field in the declarative configuration to the given value
+// WithWindow sets the Window field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the LastUpdateTime field is set to the value of the last call.
-func (b *PreemptionLimitStatusApplyConfiguration) WithLastUpdateTime(value v1.Time) *PreemptionLimitStatusApplyConfiguration {
-	b.LastUpdateTime = &value
-	return b
-}
-
-// WithCounts adds the given value to the Counts field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the Counts field.
-func (b *PreemptionLimitStatusApplyConfiguration) WithCounts(values ...*PreemptionLimitCountApplyConfiguration) *PreemptionLimitStatusApplyConfiguration {
-	for i := range values {
-		if values[i] == nil {
-			panic("nil value passed to WithCounts")
-		}
-		b.Counts = append(b.Counts, *values[i])
-	}
+// If called multiple times, the Window field is set to the value of the last call.
+func (b *PreemptionLimitStatusApplyConfiguration) WithWindow(value *PreemptionLimitWindowStatusApplyConfiguration) *PreemptionLimitStatusApplyConfiguration {
+	b.Window = value
 	return b
 }

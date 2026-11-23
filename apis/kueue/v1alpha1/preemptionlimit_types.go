@@ -114,35 +114,45 @@ type PreemptionLimitSpec struct {
 	// +kubebuilder:validation:Minimum=0
 	Limit int32 `json:"limit"`
 
-	// limitWindowSeconds specifies the sliding time window duration, in seconds.
-	// Must be greater than or equal to 1 to prevent sub-second thrashing.
+	// windowSeconds specifies the sliding time window duration, in seconds.
+	// Must be between 1 (to prevent sub-second thrashing) and 604800 (7 days), inclusive.
 	//
 	// +required
 	// +kubebuilder:validation:Minimum=1
-	LimitWindowSeconds int32 `json:"limitWindowSeconds,omitempty"`
+	// +kubebuilder:validation:Maximum=604800
+	WindowSeconds int32 `json:"windowSeconds,omitempty"`
 }
 
 // PreemptionLimitStatus defines the observed state of PreemptionLimit
 type PreemptionLimitStatus struct {
+	// window is the periodically refreshed state of the sliding time window of this limit.
+	// +optional
+	Window *PreemptionLimitWindowStatus `json:"window,omitempty"`
+}
+
+// PreemptionLimitWindowStatus defines the state of the sliding time window for a PreemptionLimit.
+type PreemptionLimitWindowStatus struct {
 	// lastUpdateTime is the time when the status was last updated.
 	//
+	// +required
 	// +kubebuilder:validation:Type=string
 	// +kubebuilder:validation:Format=date-time
-	// +optional
-	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
+	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitzero"`
 
-	// counts is periodically updated, for reference only.
-	// Restricted to the top 1000 counts to fit within CRD size limits.
+	// topAggregatedCounts shows number of issued preemptions
+	// for this limit. Periodically updated
+	// and only for informational purposes.
+	// Restricted to the top 100 counts to fit within CRD size limits.
 	//
 	// +optional
 	// +listType=atomic
-	// +kubebuilder:validation:MaxItems=1000
-	Counts []PreemptionLimitCount `json:"counts,omitempty"`
+	// +kubebuilder:validation:MaxItems=100
+	TopAggregatedCounts []PreemptionLimitTopAggregatedCount `json:"topAggregatedCounts,omitempty"`
 }
 
-// PreemptionLimitCount tracks the number of preemptions for a single aggregation unit.
-type PreemptionLimitCount struct {
-	// name identifies the aggregation unit.
+// PreemptionLimitTopAggregatedCount tracks the number of preemptions issued for one of the top aggregation units.
+type PreemptionLimitTopAggregatedCount struct {
+	// key identifies the aggregation unit.
 	// For Global aggregation it is "Global".
 	// For ByPreemptorClusterQueue and ByPreempteeClusterQueue aggregations it is the ClusterQueue name.
 	// For ByPreempteeWorkload aggregation it is "<namespace>/<workload-name>".
@@ -150,7 +160,7 @@ type PreemptionLimitCount struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=317
-	Name string `json:"name"`
+	Key string `json:"key,omitempty"`
 
 	// value is the number of preemptions recorded within the sliding time window.
 	//

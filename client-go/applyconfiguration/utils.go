@@ -84,12 +84,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &kueuev1alpha1.PreemptionConfigSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("PreemptionLimit"):
 		return &kueuev1alpha1.PreemptionLimitApplyConfiguration{}
-	case v1alpha1.SchemeGroupVersion.WithKind("PreemptionLimitCount"):
-		return &kueuev1alpha1.PreemptionLimitCountApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("PreemptionLimitSpec"):
 		return &kueuev1alpha1.PreemptionLimitSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("PreemptionLimitStatus"):
 		return &kueuev1alpha1.PreemptionLimitStatusApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("PreemptionLimitTopAggregatedCount"):
+		return &kueuev1alpha1.PreemptionLimitTopAggregatedCountApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("PreemptionLimitWindowStatus"):
+		return &kueuev1alpha1.PreemptionLimitWindowStatusApplyConfiguration{}
 
 		// Group=kueue.x-k8s.io, Version=v1beta2
 	case v1beta2.SchemeGroupVersion.WithKind("Admission"):

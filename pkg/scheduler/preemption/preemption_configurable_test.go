@@ -1166,7 +1166,7 @@ func TestGetTargetsWithStrategyRetryAt(t *testing.T) {
 		).Obj()
 	const perCQLimitName = "per-cq"
 	perCQLimit := utiltestingalpha.MakePreemptionLimit(perCQLimitName, kueuealpha.ByPreempteeCQLimitAggregation).
-		Limit(1).LimitWindowSeconds(60).Obj()
+		Limit(1).WindowSeconds(60).Obj()
 	clusterQueues := []*kueue.ClusterQueue{
 		utiltestingapi.MakeClusterQueue("cq-a").Cohort("cohort").
 			Annotation(kueuealpha.PreemptionConfigNameAnnotation, "cfg").

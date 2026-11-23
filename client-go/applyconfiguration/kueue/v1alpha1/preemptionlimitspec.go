@@ -48,10 +48,10 @@ type PreemptionLimitSpecApplyConfiguration struct {
 	// Setting limit to 0 blocks all matching preemptions under this limit.
 	//
 	Limit *int32 `json:"limit,omitempty"`
-	// limitWindowSeconds specifies the sliding time window duration, in seconds.
-	// Must be greater than or equal to 1 to prevent sub-second thrashing.
+	// windowSeconds specifies the sliding time window duration, in seconds.
+	// Must be between 1 (to prevent sub-second thrashing) and 604800 (7 days), inclusive.
 	//
-	LimitWindowSeconds *int32 `json:"limitWindowSeconds,omitempty"`
+	WindowSeconds *int32 `json:"windowSeconds,omitempty"`
 }
 
 // PreemptionLimitSpecApplyConfiguration constructs a declarative configuration of the PreemptionLimitSpec type for use with
@@ -100,10 +100,10 @@ func (b *PreemptionLimitSpecApplyConfiguration) WithLimit(value int32) *Preempti
 	return b
 }
 
-// WithLimitWindowSeconds sets the LimitWindowSeconds field in the declarative configuration to the given value
+// WithWindowSeconds sets the WindowSeconds field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the LimitWindowSeconds field is set to the value of the last call.
-func (b *PreemptionLimitSpecApplyConfiguration) WithLimitWindowSeconds(value int32) *PreemptionLimitSpecApplyConfiguration {
-	b.LimitWindowSeconds = &value
+// If called multiple times, the WindowSeconds field is set to the value of the last call.
+func (b *PreemptionLimitSpecApplyConfiguration) WithWindowSeconds(value int32) *PreemptionLimitSpecApplyConfiguration {
+	b.WindowSeconds = &value
 	return b
 }

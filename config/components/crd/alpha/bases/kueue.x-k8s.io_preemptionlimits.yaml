@@ -106,13 +106,6 @@ spec:
                 format: int32
                 minimum: 0
                 type: integer
-              limitWindowSeconds:
-                description: |-
-                  limitWindowSeconds specifies the sliding time window duration, in seconds.
-                  Must be greater than or equal to 1 to prevent sub-second thrashing.
-                format: int32
-                minimum: 1
-                type: integer
               preempteeClusterQueueSelector:
                 description: |-
                   preempteeClusterQueueSelector selects ClusterQueues of preemptee workloads to which this limit applies.
@@ -209,49 +202,83 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              ruleNames:
+                description: |-
+                  ruleNames restricts the limit to specific rule names within matching PreemptionConfigs.
+                  Preemption rules are evaluated based on trigger type (Always, InsufficientQuota,
+                  QuotaFeasibleAndInsufficientTopology) and in spec.rules order per trigger.
+                  When limits are enabled and a candidate matches multiple rules, the first rule in
+                  order that satisfies the limits is used.
+                  If not set, it applies to all rules.
+                items:
+                  maxLength: 63
+                  minLength: 1
+                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
+              windowSeconds:
+                description: |-
+                  windowSeconds specifies the sliding time window duration, in seconds.
+                  Must be between 1 (to prevent sub-second thrashing) and 604800 (7 days), inclusive.
+                format: int32
+                maximum: 604800
+                minimum: 1
+                type: integer
             required:
             - aggregation
             - configSelector
             - limit
-            - limitWindowSeconds
+            - windowSeconds
             type: object
           status:
             description: status defines the observed state of the PreemptionLimit.
             properties:
-              counts:
-                description: |-
-                  counts is periodically updated, for reference only.
-                  Restricted to the top 1000 counts to fit within CRD size limits.
-                items:
-                  description: PreemptionLimitCount tracks the number of preemptions
-                    for a single aggregation unit.
-                  properties:
-                    name:
-                      description: |-
-                        name identifies the aggregation unit.
-                        For Global aggregation it is "Global".
-                        For ByPreemptorClusterQueue and ByPreempteeClusterQueue aggregations it is the ClusterQueue name.
-                        For ByPreempteeWorkload aggregation it is "<namespace>/<workload-name>".
-                      maxLength: 317
-                      minLength: 1
-                      type: string
-                    value:
-                      description: value is the number of preemptions recorded within
-                        the sliding time window.
-                      format: int32
-                      minimum: 0
-                      type: integer
-                  required:
-                  - name
-                  - value
-                  type: object
-                maxItems: 1000
-                type: array
-                x-kubernetes-list-type: atomic
-              lastUpdateTime:
-                description: lastUpdateTime is the time when the status was last updated.
-                format: date-time
-                type: string
+              window:
+                description: window is the periodically refreshed state of the sliding
+                  time window of this limit.
+                properties:
+                  lastUpdateTime:
+                    description: lastUpdateTime is the time when the status was last
+                      updated.
+                    format: date-time
+                    type: string
+                  topAggregatedCounts:
+                    description: |-
+                      topAggregatedCounts shows number of issued preemptions
+                      for this limit. Periodically updated
+                      and only for informational purposes.
+                      Restricted to the top 100 counts to fit within CRD size limits.
+                    items:
+                      description: PreemptionLimitTopAggregatedCount tracks the number
+                        of preemptions issued for one of the top aggregation units.
+                      properties:
+                        key:
+                          description: |-
+                            key identifies the aggregation unit.
+                            For Global aggregation it is "Global".
+                            For ByPreemptorClusterQueue and ByPreempteeClusterQueue aggregations it is the ClusterQueue name.
+                            For ByPreempteeWorkload aggregation it is "<namespace>/<workload-name>".
+                          maxLength: 317
+                          minLength: 1
+                          type: string
+                        value:
+                          description: value is the number of preemptions recorded
+                            within the sliding time window.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                      required:
+                      - key
+                      - value
+                      type: object
+                    maxItems: 100
+                    type: array
+                    x-kubernetes-list-type: atomic
+                required:
+                - lastUpdateTime
+                type: object
             type: object
         type: object
     served: true

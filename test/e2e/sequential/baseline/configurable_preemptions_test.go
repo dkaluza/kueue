@@ -172,14 +172,15 @@ var _ = ginkgo.Describe("Configurable Preemption", ginkgo.Label("feature:configu
 		ginkgo.BeforeEach(func() {
 			preemptionLimit = utiltestingalpha.MakePreemptionLimit("limit-"+ns.Name, kueuealpha.GlobalLimitAggregation).
 				Limit(1).
-				LimitWindowSeconds(300).
+				WindowSeconds(300).
 				Obj()
 			behavioral.MustCreate(ctx, k8sClient, preemptionLimit)
 
 			gomega.Eventually(func(g gomega.Gomega) {
 				var got kueuealpha.PreemptionLimit
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preemptionLimit), &got)).To(gomega.Succeed())
-				g.Expect(got.Status.LastUpdateTime).NotTo(gomega.BeNil())
+				g.Expect(got.Status.Window).NotTo(gomega.BeNil())
+				g.Expect(got.Status.Window.LastUpdateTime.IsZero()).To(gomega.BeFalse())
 			}, behavioral.Timeout, behavioral.Interval).Should(gomega.Succeed())
 		})
 
@@ -256,9 +257,10 @@ var _ = ginkgo.Describe("Configurable Preemption", ginkgo.Label("feature:configu
 				gomega.Eventually(func(g gomega.Gomega) {
 					var got kueuealpha.PreemptionLimit
 					g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preemptionLimit), &got)).To(gomega.Succeed())
-					g.Expect(got.Status.LastUpdateTime).NotTo(gomega.BeNil())
-					g.Expect(got.Status.Counts).To(gomega.BeComparableTo([]kueuealpha.PreemptionLimitCount{
-						{Name: string(policy.GlobalAggregationKey), Value: 1},
+					g.Expect(got.Status.Window).NotTo(gomega.BeNil())
+					g.Expect(got.Status.Window.LastUpdateTime.IsZero()).To(gomega.BeFalse())
+					g.Expect(got.Status.Window.TopAggregatedCounts).To(gomega.BeComparableTo([]kueuealpha.PreemptionLimitTopAggregatedCount{
+						{Key: string(policy.GlobalAggregationKey), Value: 1},
 					}, cmpopts.EquateEmpty()))
 				}, behavioral.Timeout, behavioral.Interval).Should(gomega.Succeed())
 			})
