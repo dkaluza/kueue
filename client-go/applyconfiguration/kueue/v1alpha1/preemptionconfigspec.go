@@ -23,7 +23,7 @@ package v1alpha1
 //
 // PreemptionConfigSpec defines the desired state of PreemptionConfig
 type PreemptionConfigSpecApplyConfiguration struct {
-	// rules specifies preemption candidate selection rules. Each rule must have a unique name.
+	// rules specifies preemption candidate selection rules.
 	//
 	Rules []PreemptionConfigPreemptionRuleApplyConfiguration `json:"rules,omitempty"`
 }
