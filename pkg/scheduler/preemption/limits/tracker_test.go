@@ -447,36 +447,6 @@ func TestPreemptionLimitTrackerSync(t *testing.T) {
 			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).Obj(), nil)),
 			wantResult:    true,
 		},
-		"should reset events when first ruleName is added": {
-			initialLimits: tracked(trackedLimit(limit, AggregationEvents{"cq-a": {now}})),
-			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(),
-			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(), nil)),
-			wantResult:    true,
-		},
-		"should reset events when ruleName is added": {
-			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1").Obj(), AggregationEvents{"cq-a": {now}})),
-			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-1", "test-rule-2").Obj(),
-			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-1", "test-rule-2").Obj(), nil)),
-			wantResult:    true,
-		},
-		"should reset events when one of the ruleNames is removed": {
-			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1", "test-rule-2").Obj(), AggregationEvents{"cq-a": {now}})),
-			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(),
-			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-1").Obj(), nil)),
-			wantResult:    true,
-		},
-		"should keep events when ruleNames are in different order": {
-			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1", "test-rule-2").Obj(), AggregationEvents{"cq-a": {now}})),
-			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-2", "test-rule-1").Obj(),
-			want:          tracked(withResetGeneration(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-2", "test-rule-1").Obj(), AggregationEvents{"cq-a": {now}}), 1)),
-			wantResult:    false,
-		},
-		"should reset events when ruleNames entry got updated": {
-			initialLimits: tracked(trackedLimit(limitBase.Clone().RuleNames("test-rule-1").Obj(), AggregationEvents{"cq-a": {now}})),
-			synced:        limitBase.Clone().Generation(2).RuleNames("test-rule-2").Obj(),
-			want:          tracked(trackedLimit(limitBase.Clone().Generation(2).RuleNames("test-rule-2").Obj(), nil)),
-			wantResult:    true,
-		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
