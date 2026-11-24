@@ -18,7 +18,6 @@ package limits
 
 import (
 	"fmt"
-	"slices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -85,20 +84,11 @@ func selectorOrEverything(ls *metav1.LabelSelector) (labels.Selector, error) {
 	return metav1.LabelSelectorAsSelector(ls)
 }
 
-// matches returns true when arguments are passing filters on associated PreemptionLimitSpec.
-func (m *preemptionLimitMatcher) matches(preemptorCQ, targetCQ *schdcache.ClusterQueueSnapshot, ruleReference policy.PreemptionConfigRuleReference) bool {
+// matchesClusterQueues returns whether the limit's ClusterQueue selectors match
+// preemptorCQ and targetCQ.
+func (m *preemptionLimitMatcher) matchesClusterQueues(preemptorCQ, targetCQ *schdcache.ClusterQueueSnapshot) bool {
 	return m.preemptorClusterQueueSelector.Matches(labels.Set(preemptorCQ.Labels)) &&
-		m.preempteeClusterQueueSelector.Matches(labels.Set(targetCQ.Labels)) &&
-		m.matchRuleNames(ruleReference)
-}
-
-func (m *preemptionLimitMatcher) matchRuleNames(ruleReference policy.PreemptionConfigRuleReference) bool {
-	// Match every rule when no ruleNames provided.
-	if len(m.limit.Spec.RuleNames) == 0 {
-		return true
-	}
-
-	return slices.Contains(m.limit.Spec.RuleNames, string(ruleReference))
+		m.preempteeClusterQueueSelector.Matches(labels.Set(targetCQ.Labels))
 }
 
 // aggregationKey returns the aggregation key that preempting target for preemptor counts against.

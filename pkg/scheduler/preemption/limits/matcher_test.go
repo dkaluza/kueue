@@ -97,18 +97,15 @@ func TestNewPreemptionLimitMatcher(t *testing.T) {
 	}
 }
 
-func TestPreemptionLimitMatcherMatches(t *testing.T) {
+func TestPreemptionLimitMatcherMatchesClusterQueues(t *testing.T) {
 	preemptorCQ := &schdcache.ClusterQueueSnapshot{Name: "preemptor-cq", Labels: map[string]string{"side": "preemptor"}}
 	targetCQ := &schdcache.ClusterQueueSnapshot{Name: "preemptee-cq", Labels: map[string]string{"side": "preemptee"}}
 	selectsPreemptor := &metav1.LabelSelector{MatchLabels: map[string]string{"side": "preemptor"}}
 	selectsPreemptee := &metav1.LabelSelector{MatchLabels: map[string]string{"side": "preemptee"}}
-	notMatchingLabels := &metav1.LabelSelector{MatchLabels: map[string]string{"side": "notMatching"}}
 
 	cases := map[string]struct {
 		preemptorClusterQueueSelector *metav1.LabelSelector
 		preempteeClusterQueueSelector *metav1.LabelSelector
-		ruleNames                     []string
-		ruleReference                 policy.PreemptionConfigRuleReference
 		want                          bool
 	}{
 		"limit without ClusterQueue selectors matches any ClusterQueues": {
@@ -117,50 +114,16 @@ func TestPreemptionLimitMatcherMatches(t *testing.T) {
 		"limit matches when both ClusterQueue selectors match": {
 			preemptorClusterQueueSelector: selectsPreemptor,
 			preempteeClusterQueueSelector: selectsPreemptee,
-			ruleReference:                 "preemptionLimitRuleReference",
 			want:                          true,
 		},
 		"limit doesn't match when preemptorClusterQueueSelector doesn't match": {
 			preemptorClusterQueueSelector: selectsPreemptee,
 			preempteeClusterQueueSelector: selectsPreemptee,
-			ruleReference:                 "preemptionLimitRuleReference",
 			want:                          false,
 		},
 		"limit doesn't match when preempteeClusterQueueSelector doesn't match": {
 			preemptorClusterQueueSelector: selectsPreemptor,
 			preempteeClusterQueueSelector: selectsPreemptor,
-			ruleReference:                 "preemptionLimitRuleReference",
-			want:                          false,
-		},
-		"multiple ruleNames contain ruleReference for candidate, match": {
-			ruleNames:     []string{"unknownRuleName", "preemptionLimitRuleReference"},
-			ruleReference: "preemptionLimitRuleReference",
-			want:          true,
-		},
-		"multiple ruleNames don't contain ruleReference for candidate, no match": {
-			ruleNames:     []string{"unknownRuleName", "unknownRuleName2"},
-			ruleReference: "preemptionLimitRuleReference",
-			want:          false,
-		},
-		"clusterQueue match and ruleNames contain ruleReference, match": {
-			preemptorClusterQueueSelector: selectsPreemptor,
-			preempteeClusterQueueSelector: selectsPreemptee,
-			ruleNames:                     []string{"preemptionLimitRuleReference"},
-			ruleReference:                 "preemptionLimitRuleReference",
-			want:                          true,
-		},
-		"clusterQueue match but ruleNames don't contain ruleReference, no match": {
-			preemptorClusterQueueSelector: selectsPreemptor,
-			preempteeClusterQueueSelector: selectsPreemptee,
-			ruleNames:                     []string{"preemptionLimitRuleReference"},
-			ruleReference:                 "unknownRule",
-			want:                          false,
-		},
-		"clusterQueue doesn't match but ruleNames contain ruleReference, no match": {
-			preemptorClusterQueueSelector: notMatchingLabels,
-			preempteeClusterQueueSelector: notMatchingLabels,
-			ruleNames:                     []string{"preemptionLimitRuleReference"},
-			ruleReference:                 "preemptionLimitRuleReference",
 			want:                          false,
 		},
 	}
@@ -170,14 +133,13 @@ func TestPreemptionLimitMatcherMatches(t *testing.T) {
 				WindowSeconds(60).
 				PreemptorClusterQueueSelector(tc.preemptorClusterQueueSelector).
 				PreempteeClusterQueueSelector(tc.preempteeClusterQueueSelector).
-				RuleNames(tc.ruleNames...).
 				Obj()
 			matcher, err := newPreemptionLimitMatcher(limit, utiltestingalpha.MakePreemptionConfig("config").Obj())
 			if err != nil {
 				t.Fatalf("newPreemptionLimitMatcher() unexpected error: %v", err)
 			}
-			if got := matcher.matches(preemptorCQ, targetCQ, tc.ruleReference); got != tc.want {
-				t.Errorf("matches() = %v, want %v", got, tc.want)
+			if got := matcher.matchesClusterQueues(preemptorCQ, targetCQ); got != tc.want {
+				t.Errorf("matchesClusterQueues() = %v, want %v", got, tc.want)
 			}
 		})
 	}

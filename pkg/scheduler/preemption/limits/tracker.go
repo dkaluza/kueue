@@ -26,7 +26,6 @@ import (
 
 	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	"sigs.k8s.io/kueue/pkg/scheduler/preemption/policy"
-	utilslices "sigs.k8s.io/kueue/pkg/util/slices"
 )
 
 // pruneGracePeriod delays pruning past the window, so that readers whose
@@ -101,15 +100,14 @@ func trackedCopy(limit *kueuealpha.PreemptionLimit) *kueuealpha.PreemptionLimit 
 }
 
 // isCompatibleWith reports whether the tracked state can continue to be used
-// for limit, i.e. whether limit has the same UID, aggregation, selectors and ruleNames
-// that this state was initialized with
+// for limit, i.e. whether limit has the same UID, aggregation, and selectors that
+// this state was initialized with.
 func (ls limitState) isCompatibleWith(limit *kueuealpha.PreemptionLimit) bool {
 	return ls.limit.UID == limit.UID &&
 		ls.limit.Spec.Aggregation == limit.Spec.Aggregation &&
 		equality.Semantic.DeepEqual(ls.limit.Spec.ConfigSelector, limit.Spec.ConfigSelector) &&
 		equality.Semantic.DeepEqual(ls.limit.Spec.PreemptorClusterQueueSelector, limit.Spec.PreemptorClusterQueueSelector) &&
-		equality.Semantic.DeepEqual(ls.limit.Spec.PreempteeClusterQueueSelector, limit.Spec.PreempteeClusterQueueSelector) &&
-		utilslices.CmpNoOrder(ls.limit.Spec.RuleNames, limit.Spec.RuleNames)
+		equality.Semantic.DeepEqual(ls.limit.Spec.PreempteeClusterQueueSelector, limit.Spec.PreempteeClusterQueueSelector)
 }
 
 func (ls limitState) isLimitRelaxed(limit *kueuealpha.PreemptionLimit) bool {

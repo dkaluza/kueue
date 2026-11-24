@@ -43,14 +43,6 @@ type PreemptionLimitSpecApplyConfiguration struct {
 	// If not set, this limit applies to preemptee workloads from all ClusterQueues.
 	//
 	PreempteeClusterQueueSelector *v1.LabelSelectorApplyConfiguration `json:"preempteeClusterQueueSelector,omitempty"`
-	// ruleNames restricts the limit to specific rule names within matching PreemptionConfigs.
-	// Preemption rules are evaluated based on trigger type (Always, InsufficientQuota,
-	// QuotaFeasibleAndInsufficientTopology) and in spec.rules order per trigger.
-	// When limits are enabled and a candidate matches multiple rules, the first rule in
-	// order that satisfies the limits is used.
-	// If not set, it applies to all rules.
-	//
-	RuleNames []string `json:"ruleNames,omitempty"`
 	// limit defines how many preemption events can occur within the given time window.
 	// An event is defined as a confirmed (preemptor, preemptee) eviction pair.
 	// Setting limit to 0 blocks all matching preemptions under this limit.
@@ -97,16 +89,6 @@ func (b *PreemptionLimitSpecApplyConfiguration) WithPreemptorClusterQueueSelecto
 // If called multiple times, the PreempteeClusterQueueSelector field is set to the value of the last call.
 func (b *PreemptionLimitSpecApplyConfiguration) WithPreempteeClusterQueueSelector(value *v1.LabelSelectorApplyConfiguration) *PreemptionLimitSpecApplyConfiguration {
 	b.PreempteeClusterQueueSelector = value
-	return b
-}
-
-// WithRuleNames adds the given value to the RuleNames field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the RuleNames field.
-func (b *PreemptionLimitSpecApplyConfiguration) WithRuleNames(values ...string) *PreemptionLimitSpecApplyConfiguration {
-	for i := range values {
-		b.RuleNames = append(b.RuleNames, values[i])
-	}
 	return b
 }
 
